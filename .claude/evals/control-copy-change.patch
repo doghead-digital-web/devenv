@@ -1,0 +1,13 @@
+diff --git a/laravel/agents.nix b/laravel/agents.nix
+index 5038589..3890d4c 100644
+--- a/laravel/agents.nix
++++ b/laravel/agents.nix
+@@ -141,7 +141,7 @@ in
+       };
+ 
+       block-process-kill = {
+-        name = "Block agents from stopping a process by name";
++        name = "Block agents from stopping a process by its name";
+         hookType = "PreToolUse";
+         inherit (processKillGuard) matcher command;
+       };

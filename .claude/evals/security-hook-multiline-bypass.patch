@@ -1,0 +1,13 @@
+--- a/laravel/guards/destructive-database.nix
++++ b/laravel/guards/destructive-database.nix
+@@ -22,10 +22,6 @@
+   testFormCheck = ''
+     cmd=$(${jq} -r '.tool_input.command // empty')
+     printf '%s' "$cmd" | ${grep} -Eqi -e '(^|[^a-z0-9_.:-])(m(i(g(r(a(te?)?)?)?)?)?)?:(f(r(e(sh?)?)?)?|r(e(f(r(e(sh?)?)?)?|s(et?)?)?|o(l(l(b(a(ck?)?)?)?)?)?)?)([^a-z0-9_:-]|$)' -e '(^|[^a-z0-9_.:-])(db?)?:w(i(pe?)?)?([^a-z0-9_:-]|$)' -e 'drop([[:space:]]|/\*)' || exit 0
+-    if [ "$(printf '%s' "$cmd" | tr -d '\n\r')" != "$cmd" ]; then
+-      echo "Blocked: this wipes a database, and a command that does must be a single line." >&2
+-      exit 2
+-    fi
+     printf '%s' "$cmd" | ${grep} -Eqx -e 'DB_DATABASE=(${testDb}|"\$\{DB_TEST_DATABASE:\?\}") APP_ENV=testing php artisan (migrate:(fresh|reset|refresh|rollback)|db:wipe)( (--force|--seed|--step=[0-9]+|--no-interaction|-n))*' && exit 0
+   '';
+ 

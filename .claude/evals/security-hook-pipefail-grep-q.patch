@@ -1,0 +1,12 @@
+diff --git a/laravel/guards/quality-gate.nix b/laravel/guards/quality-gate.nix
+--- a/laravel/guards/quality-gate.nix
++++ b/laravel/guards/quality-gate.nix
+@@ -438,7 +438,7 @@
+     [ "''${#cmd}" -le 65536 ] || refuseFallback
+
+     triggered=0
+-    ${grep} -Eqi -e '${shellNamePatterns}' <<<"$cmd" && triggered=1
++    printf '%s\n' "$cmd" | ${grep} -Eqi -e '${shellNamePatterns}' && triggered=1
+     ${grep} -Eqi -e ${composerConfigPatternQuoted} <<<"$cmd" && triggered=1
+     ${grep} -Eqi -e '${packagePkgCommandPattern}' <<<"$cmd" && triggered=1
+     ${grep} -Eqi -e '${patchPattern}' <<<"$cmd" && triggered=1

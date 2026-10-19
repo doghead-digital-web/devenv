@@ -1,0 +1,23 @@
+diff --git a/laravel/database-names.nix b/laravel/database-names.nix
+index 9cec8b3..a167acd 100644
+--- a/laravel/database-names.nix
++++ b/laravel/database-names.nix
+@@ -9,15 +9,9 @@ let
+       "Worktree '${worktreeName}' would get the database name ${name}, which is not only lowercase letters, digits and underscores. Rename the worktree.";
+     name;
+ 
+-  dbName =
+-    let
+-      name = assertDatabaseName (
+-        "${appName}_" + builtins.replaceStrings [ "-" "." "/" ] [ "_" "_" "_" ] worktreeName
+-      );
+-    in
+-    assert assertMsg (builtins.match ".*_test(_[0-9]+)?" name == null)
+-      "Worktree '${worktreeName}' would get the dev database ${name}, which is named like a test database and can be another worktree's. Rename the worktree so it does not end in -test or -test-<N>.";
+-    name;
++  dbName = assertDatabaseName (
++    "${appName}_" + builtins.replaceStrings [ "-" "." "/" ] [ "_" "_" "_" ] worktreeName
++  );
+ 
+   testDbName =
+     let

@@ -1,0 +1,19 @@
+diff --git a/laravel/reserved-databases.nix b/laravel/reserved-databases.nix
+index 6aa4217..7fba7ba 100644
+--- a/laravel/reserved-databases.nix
++++ b/laravel/reserved-databases.nix
+@@ -1 +1 @@
+-appName: "^${appName}(_(main|develop|test|e2e)(_|$)|$)"
++appName: "^${appName}(_(main|develop|staging|test|e2e)(_|$)|$)"
+diff --git a/tests/Laravel/ReservedDatabasesTest.php b/tests/Laravel/ReservedDatabasesTest.php
+index af8bb28..9675e74 100644
+--- a/tests/Laravel/ReservedDatabasesTest.php
++++ b/tests/Laravel/ReservedDatabasesTest.php
+@@ -25,6 +25,7 @@ test('nix reserves the lowercase databases database-names.nix can produce for th
+     ['harvst', 'harvst_main', true],
+     ['harvst', 'harvst_main_test', true],
+     ['harvst', 'harvst_develop', true],
++    ['harvst', 'harvst_staging', true],
+     ['harvst', 'harvst_test_test_3', true],
+     ['harvst', 'harvst_e2e', true],
+     ['harvst', 'harvst', true],

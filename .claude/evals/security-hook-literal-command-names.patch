@@ -1,0 +1,113 @@
+diff --git a/laravel/guards/destructive-database.nix b/laravel/guards/destructive-database.nix
+index e3492ea..5d9fa3a 100644
+--- a/laravel/guards/destructive-database.nix
++++ b/laravel/guards/destructive-database.nix
+@@ -21,7 +21,7 @@ let
+ 
+   testFormCheck = ''
+     cmd=$(${jq} -r '.tool_input.command // empty')
+-    printf '%s' "$cmd" | ${grep} -Eqi -e '(^|[^a-z0-9_.:-])(m(i(g(r(a(te?)?)?)?)?)?)?:(f(r(e(sh?)?)?)?|r(e(f(r(e(sh?)?)?)?|s(et?)?)?|o(l(l(b(a(ck?)?)?)?)?)?)?)([^a-z0-9_:-]|$)' -e '(^|[^a-z0-9_.:-])(db?)?:w(i(pe?)?)?([^a-z0-9_:-]|$)' -e 'drop([[:space:]]|/\*)' || exit 0
++    printf '%s' "$cmd" | ${grep} -Eqi -e 'migrate:(fresh|refresh|reset|rollback)' -e 'db:wipe' -e 'drop([[:space:]]|/\*)' || exit 0
+     if [ "$(printf '%s' "$cmd" | tr -d '\n\r')" != "$cmd" ]; then
+       echo "Blocked: this wipes a database, and a command that does must be a single line." >&2
+       exit 2
+diff --git a/tests/Laravel/DestructiveDatabaseGuardHookTest.php b/tests/Laravel/DestructiveDatabaseGuardHookTest.php
+index bf4872f..d2cd76c 100644
+--- a/tests/Laravel/DestructiveDatabaseGuardHookTest.php
++++ b/tests/Laravel/DestructiveDatabaseGuardHookTest.php
+@@ -5,14 +5,9 @@ declare(strict_types=1);
+ namespace Tests\Laravel;
+ 
+ use Illuminate\Contracts\Process\ProcessResult;
+-use Illuminate\Support\Facades\Artisan;
+ use Illuminate\Support\Facades\File;
+ use Illuminate\Support\Facades\Process;
+-use Illuminate\Support\Str;
+ use PHPUnit\Framework\Assert;
+-use Symfony\Component\Console\Application;
+-use Symfony\Component\Console\Command\Command;
+-use Symfony\Component\Console\Exception\CommandNotFoundException;
+ 
+ const FEATURE_DATABASE = 'acme_acm_1_reseed';
+ 
+@@ -105,80 +100,12 @@ test('a feature worktree may still wipe its test database', function (string $to
+     expect(runDestructiveDatabaseGuard(featureHook($root), $tool, 'DB_DATABASE="${DB_TEST_DATABASE:?}" APP_ENV=testing php artisan migrate:fresh --force')->exitCode())->toBe(0);
+ })->with('tools');
+ 
+-test('a feature worktree refuses an abbreviated destructive command on another database', function (string $tool, string $name): void {
+-    $root = guardedWorktreeRoot();
+-
+-    expect(runDestructiveDatabaseGuard(featureHook($root), $tool, "DB_DATABASE=acme_acm_2_other php artisan {$name}")->exitCode())->toBe(2);
+-})->with('tools')->with(['mi:fr', ':fr', 'd:wi', 'mi:rol', 'mi:res', 'mi:ref', 'MI:FR']);
+-
+ test('a feature worktree lets through commands that wipe nothing', function (string $tool, string $name): void {
+     $root = guardedWorktreeRoot();
+ 
+     expect(runDestructiveDatabaseGuard(featureHook($root), $tool, "php artisan {$name}")->exitCode())->toBe(0);
+ })->with('tools')->with(['route:list', 'make:model', 'migrate:status', 'db:seed', 'db:show']);
+ 
+-/**
+- * @return array<string, string>
+- */
+-function migrateAndDatabaseAbbreviations(): array
+-{
+-    $console = new Application;
+-    $names = [];
+-
+-    foreach (Artisan::all() as $name => $command) {
+-        if (is_string($name) && $command instanceof Command && $command->getName() === $name) {
+-            $console->addCommand(new Command($name)->setAliases(array_filter($command->getAliases(), is_string(...))));
+-            $names[] = $name;
+-        }
+-    }
+-
+-    $abbreviations = [];
+-
+-    foreach (array_filter($names, fn (string $name): bool => Str::startsWith($name, ['migrate:', 'db:'])) as $name) {
+-        [$namespace, $command] = explode(':', $name, 2);
+-
+-        foreach (range(0, mb_strlen($namespace)) as $namespaceLength) {
+-            foreach (range(0, mb_strlen($command)) as $commandLength) {
+-                $abbreviation = mb_substr($namespace, 0, $namespaceLength).':'.mb_substr($command, 0, $commandLength);
+-
+-                try {
+-                    $abbreviations[$abbreviation] = (string) $console->find($abbreviation)->getName();
+-                } catch (CommandNotFoundException) {
+-                    continue;
+-                }
+-            }
+-        }
+-    }
+-
+-    return $abbreviations;
+-}
+-
+-test('every abbreviation Symfony resolves to a destructive command is refused, in either case', function (): void {
+-    $hook = featureHook(guardedWorktreeRoot());
+-    $destructive = collect(migrateAndDatabaseAbbreviations())
+-        ->filter(fn (string $name): bool => in_array($name, ['migrate:fresh', 'migrate:refresh', 'migrate:reset', 'migrate:rollback', 'db:wipe'], true))
+-        ->keys();
+-
+-    expect($destructive)->toContain('mi:fr', ':fr', 'd:wi', 'mi:rol', 'migrate:fresh', 'db:wipe');
+-
+-    foreach ($destructive->flatMap(fn (string $abbreviation): array => [$abbreviation, mb_strtoupper($abbreviation)]) as $spelling) {
+-        expect(runDestructiveDatabaseGuard($hook, 'Bash', "DB_DATABASE=acme_acm_2_other php artisan {$spelling}")->exitCode())->toBe(2, $spelling);
+-    }
+-});
+-
+-test('every abbreviation Symfony resolves to another migrate or db command gets through', function (): void {
+-    $hook = featureHook(guardedWorktreeRoot());
+-    $harmless = collect(migrateAndDatabaseAbbreviations())
+-        ->reject(fn (string $name): bool => in_array($name, ['migrate:fresh', 'migrate:refresh', 'migrate:reset', 'migrate:rollback', 'db:wipe'], true))
+-        ->keys();
+-
+-    expect($harmless)->toContain('mi:st', 'd:se', 'migrate:status');
+-
+-    foreach ($harmless as $abbreviation) {
+-        expect(runDestructiveDatabaseGuard($hook, 'Bash', "php artisan {$abbreviation}")->exitCode())->toBe(0, $abbreviation);
+-    }
+-});
+-
+ test('a feature worktree refuses every other form and names the two it allows', function (string $tool, string $command): void {
+     $root = guardedWorktreeRoot();
+ 

@@ -1,0 +1,14 @@
+diff --git a/laravel/agents.nix b/laravel/agents.nix
+index 5038589..0e8f1d6 100644
+--- a/laravel/agents.nix
++++ b/laravel/agents.nix
+@@ -137,7 +137,8 @@ in
+       block-teardown = {
+         name = "Block agents from tearing a worktree down";
+         hookType = "PreToolUse";
+-        inherit (teardownGuard) matcher command;
++        matcher = "^Bash$";
++        inherit (teardownGuard) command;
+       };
+ 
+       block-process-kill = {

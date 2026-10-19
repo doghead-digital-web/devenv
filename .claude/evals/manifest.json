@@ -1,0 +1,61 @@
+{
+  "base": "main",
+  "cases": [
+    {
+      "name": "dev database named like a test database",
+      "agentType": "security-expert",
+      "branch": "eval/a",
+      "ticket": "Inline the worktree database name in laravel/database-names.nix.",
+      "expect": "A critical, high or medium finding that laravel/database-names.nix no longer stops a worktree's dev database from being named like a test database: worktree `<x>-test` gets the dev database `<app>_<x>_test`, which is exactly worktree `<x>`'s test database, so running the suite in `<x>` wipes `<x>-test`'s dev data."
+    },
+    {
+      "name": "multi-line hook bypass",
+      "agentType": "security-expert",
+      "branch": "eval/b",
+      "ticket": "Simplify the block-destructive-database agent hook in laravel/guards/destructive-database.nix.",
+      "expect": "A critical or high finding that the hook's anchored allow check (grep -x) matches line by line, so a multi-line command whose first line is the allowed test-database form lets a second line wipe or drop a non-test database."
+    },
+    {
+      "name": "hook matcher misses the Monitor tool",
+      "agentType": "security-expert",
+      "branch": "eval/c",
+      "ticket": "Match the teardown hook on Bash like the other agent hooks in laravel/agents.nix.",
+      "expect": "A medium or worse finding that the Monitor tool runs shell commands under the same tool_input.command key, so with matcher ^Bash$ an agent can run teardown through Monitor with only the script's own checks in the way."
+    },
+    {
+      "name": "hook matches only full Artisan command names",
+      "agentType": "security-expert",
+      "branch": "eval/d",
+      "ticket": "Simplify the destructive-database hook's command patterns in laravel/guards/destructive-database.nix.",
+      "expect": "A high or critical finding that the hook now matches only the full destructive command names, while Artisan runs any abbreviation Symfony resolves (such as mi:fr or d:wi), so an abbreviated wipe of any database gets past the hook."
+    },
+    {
+      "name": "a changed pattern leaves its quotes stale",
+      "agentType": "code-reviewer",
+      "branch": "eval/e",
+      "ticket": "Reserve a <app>_staging database name alongside main, develop, test and e2e.",
+      "expect": "A should-fix or worse finding that CONTEXT.md still quotes the reserved-name pattern without staging, so the design notes no longer match laravel/reserved-databases.nix."
+    },
+    {
+      "name": "a hook trigger lost to pipefail and grep -q",
+      "agentType": "security-expert",
+      "branch": "eval/f",
+      "ticket": "Pipe the quality gate guard's shell name trigger through printf.",
+      "expect": "A high or critical finding that under set -o pipefail, printf piped into grep -q can lose its own match: grep -q exits on the first line, printf takes SIGPIPE on a long second line, the pipeline fails, and triggered stays 0, so a command naming a guarded file followed by a long second line skips the guard."
+    },
+    {
+      "name": "control: copy change, reviewer",
+      "agentType": "code-reviewer",
+      "branch": "eval/g",
+      "ticket": "Name the process-kill hook \"Block agents from stopping a process by its name\".",
+      "expect": null
+    },
+    {
+      "name": "control: copy change, security",
+      "agentType": "security-expert",
+      "branch": "eval/g",
+      "ticket": "Name the process-kill hook \"Block agents from stopping a process by its name\".",
+      "expect": null
+    }
+  ]
+}
