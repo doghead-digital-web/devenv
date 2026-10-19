@@ -131,11 +131,17 @@ and without `CI=1` gave `harvst_test` and the per-worktree name in turn.
 
 `workspace.nix` hashes `<appName>/<worktree>` to a slot from 1 to 500.
 php-fpm listens on `8500 + slot` and Vite on `5673 + slot`, and Redis gets
-database `1 + hash mod 63`. A `.devenv-index` file at the worktree root
+database `1 + hash mod 127`. A `.devenv-index` file at the worktree root
 holding a number from 1 to 500 overrides the slot; anything else fails to
 evaluate. It does not move the Redis index, which always comes from the
-hash, so with 63 indexes two worktrees sharing one is likely sooner or
-later.
+hash, so two worktrees can still share one; with 127 indexes that takes
+about twice as many live worktrees as it did with 63.
+
+The range needs a Redis with 128 databases, which Joey's nix-darwin Redis
+runs since Oct 19 (`--databases 128`). Index 0 is left to anything outside
+the apps. A Redis with fewer databases, such as a CI service on the default
+16, refuses a high index with "DB index is out of range"; neither app's
+suite or orb setup talks to Redis today.
 
 Every app shares the one range. The apps used to hash the worktree name
 alone onto per-app bases (8500 and 8600, 5673 and 5773) whose 500-wide

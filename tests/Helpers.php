@@ -31,13 +31,14 @@ const WORKSPACE_EXPR = <<<'NIX'
         dbName
         testDbName
         reservedDatabasePattern
+        redisDbIndex
         ;
     }
     NIX;
 
 /**
  * @param  array<string, string|false>  $env
- * @return array{appName: string, worktreeName: string, dbName: string, testDbName: string, reservedDatabasePattern: string}
+ * @return array{appName: string, worktreeName: string, dbName: string, testDbName: string, reservedDatabasePattern: string, redisDbIndex: int}
  */
 function workspace(string $appName, string $root, array $env = []): array
 {
@@ -50,7 +51,7 @@ function workspace(string $appName, string $root, array $env = []): array
 
     Assert::assertTrue($result->successful(), $result->errorOutput());
 
-    /** @var array{appName: string, worktreeName: string, dbName: string, testDbName: string, reservedDatabasePattern: string} */
+    /** @var array{appName: string, worktreeName: string, dbName: string, testDbName: string, reservedDatabasePattern: string, redisDbIndex: int} */
     return json_decode($result->output(), true);
 }
 

@@ -52,7 +52,7 @@ in
       phpPort = 8500 + slot;
       vitePort = 5673 + slot;
       rustfsPort = 9000;
-      redisDbIndex = (lib.mod hashValue 63) + 1;
+      redisDbIndex = (lib.mod hashValue 127) + 1;
 
       dbUser = "root";
       inherit (databaseNames) dbName;
