@@ -1,0 +1,18 @@
+/vendor
+/.phpunit.cache
+.phpunit.result.cache
+.DS_Store
+
+# Devenv
+.devenv*
+devenv.local.nix
+devenv.local.yaml
+
+# direnv
+.direnv
+
+# The wiring fixture app's generated files
+/tests/fixtures/app/devenv.lock
+/tests/fixtures/app/.claude
+/tests/fixtures/app/.mcp.json
+/tests/fixtures/app/.pre-commit-config.yaml

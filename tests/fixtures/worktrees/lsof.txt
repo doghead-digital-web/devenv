@@ -1,0 +1,15 @@
+p101
+fcwd
+n@ROOT@/hrvst-1-merged
+p102
+fcwd
+n@ROOT@/hrvst-1-merged/node_modules
+p103
+fcwd
+n@ROOT@/hrvst-1-merged-http
+p104
+fcwd
+n@ROOT@/main
+p105
+fcwd
+n@ROOT@/hrvst-2-unmerged

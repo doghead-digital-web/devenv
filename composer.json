@@ -1,0 +1,34 @@
+{
+    "name": "doghead-digital/devenv",
+    "description": "Tests for Doghead Digital's shared devenv module for Laravel client apps.",
+    "license": "proprietary",
+    "type": "project",
+    "require": {
+        "php": "^8.5"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^11.0",
+        "pestphp/pest": "^5.2",
+        "phpunit/phpunit": "^13.2.4"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": [
+            "Composer\\Config::disableProcessTimeout",
+            "pest",
+            "bash laravel/guards/ask-before-publishing.test.sh"
+        ]
+    }
+}
