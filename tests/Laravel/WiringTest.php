@@ -96,6 +96,21 @@ test('the word guards run the commands their guard files build', function (strin
     ['block-process-kill', 'laravel/guards/process-kill.nix'],
 ]);
 
+test('claude-yolo starts Claude with no hooks and no permission prompts', function (): void {
+    $result = Process::path(module_path('tests/fixtures/app'))
+        ->env(['CI' => false])
+        ->timeout(600)
+        ->run(['devenv', 'eval', 'scripts.claude-yolo.exec']);
+
+    expect($result->successful())->toBeTrue($result->errorOutput());
+
+    /** @var array{'scripts.claude-yolo.exec': string} $evaluated */
+    $evaluated = json_decode($result->output(), true);
+
+    expect($evaluated['scripts.claude-yolo.exec'])
+        ->toBe("exec claude --dangerously-skip-permissions --settings '{\"disableAllHooks\":true}' \"\$@\"\n");
+});
+
 test("the destructive database guard runs the command its guard file builds for the app's own worktree", function (): void {
     expect(withToolNames(fixtureAppHooks()['block-destructive-database']['command']))
         ->toBe(guardCommand('laravel/guards/destructive-database.nix', [

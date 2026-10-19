@@ -84,6 +84,8 @@ in
       description = "MCP servers written to `.mcp.json` for Claude Code, on top of the module's own set.";
     };
 
+    yolo.enable = lib.mkEnableOption "the `claude-yolo` script, which starts Claude Code with every hook and permission prompt off";
+
     qualityGate = {
       enable = lib.mkEnableOption "the guard that blocks agents from editing a quality gate's configuration";
 

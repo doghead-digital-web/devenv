@@ -28,6 +28,24 @@ session in every worktree restarts, after the shell reloads, before it is
 trusted with that hook. HRVST-180's builder found this when a piped dry run
 went through a session that predated `block-teardown`.
 
+## `claude-yolo` turns every hook off for one session, at launch
+
+With `yolo.enable`, the shell gets `claude-yolo`: `claude
+--dangerously-skip-permissions --settings '{"disableAllHooks":true}'`, for
+proof-of-concept work where the guards cost more than they save. It drops
+`git-hooks-run` and `builder-ci-gate` along with the guards, so nothing
+formats an edit or holds a builder's task open.
+
+It is a launch flag rather than an environment variable each guard reads,
+so the bypass is a decision made outside the session and ends with it. An
+agent cannot start its own session with it, and nothing it writes turns it
+on. An agent could still write `disableAllHooks` or `env` into
+`.claude/settings.local.json` for the next session; that is the
+`qualityGate` list's job, not this script's. The flag is CLI-level settings,
+which outrank the project's `.claude/settings.json`, checked with a
+throwaway project whose `UserPromptSubmit` hook fired without the flag and
+not with it.
+
 ## The hooks dir is shared across worktrees, so a hook must never name a worktree
 
 Every worktree commits through the one hooks dir of the repository, and
