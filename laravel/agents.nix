@@ -62,6 +62,13 @@ let
   );
 in
 {
+  scripts = lib.optionalAttrs cfg.yolo.enable {
+    claude-yolo.description = "Start Claude Code with every hook and permission prompt off, for throwaway proof-of-concept work";
+    claude-yolo.exec = ''
+      exec claude --dangerously-skip-permissions --settings '{"disableAllHooks":true}' "$@"
+    '';
+  };
+
   doghead.laravel.mcpServers = {
     shadcn = {
       command = "pnpm";

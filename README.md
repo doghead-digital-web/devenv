@@ -103,6 +103,7 @@ All under `doghead.laravel`.
 | `ciJobs` | `ci-lint`, `ci-hooks`, `ci-test`, `ci-browser`, `ci-coverage` | what `ci` runs, in order; an app script such as `ci-vitest` can go in the list |
 | `builderGate` | `[ "ci:check" ]` | composer scripts the `builder-ci-gate` hook runs before a `product-builder` task may close |
 | `mcpServers` | `{}` | MCP servers added to the module's own (shadcn, magicuidesign, laravel-boost, playwright, chrome, linear), as `{ command; args; }` |
+| `yolo.enable` | `false` | adds `claude-yolo`, which starts Claude Code with every hook and permission prompt off for that session |
 | `qualityGate.enable` | `false` | turns on the two hooks that keep agents from editing a quality gate's configuration |
 | `qualityGate.files` | `phpstan.neon`, `pint.json`, `rector.php`, `phpunit.xml`, `eslint.config.js`, `.prettierrc`, `.prettierignore`, `tsconfig.json`, `vitest.config.ts`, `devenv.nix`, `devenv.yaml`, `devenv.lock`, `devenv.local.nix`, `devenv.local.yaml`, `.envrc`, `.claude/settings.json`, `.claude/settings.local.json` | files the guard protects |
 | `qualityGate.dirs` | `tests/unit/nix`, `.github/workflows`, `nix` | folders the guard protects, each but its own `CONTEXT.md` (matched case-insensitively) |
