@@ -101,6 +101,7 @@ in
         excludes = [
           "\\.blade\\.php$"
           "^(bootstrap/cache|storage)/"
+          "^(vendor|node_modules)/"
         ];
         language = "system";
       };

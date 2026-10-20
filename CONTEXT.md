@@ -732,13 +732,16 @@ from narrowing it to a green subset.
 the staged files only, and the `git-hooks-run` Claude Code hook runs them
 on the one file an agent just edited. That override replaces devenv's
 default, a bare `prek run`, which checks the staged set rather than the
-edited file.
+edited file. Its matcher is the edit tools only: with no matcher it ran
+after every Read too, so an agent reading a file in `vendor/` had pint
+rewrite it.
 
 Each hook's `files` pattern mirrors the scope of the app script it stands
 in for: `rector`'s is the `withPaths` list in the app's `rector.php`,
-`pint` leaves out Blade templates the way a bare `pint` run does, and the
-formatter's hook covers `resources/` and the root `*.config.ts` files,
-what `pnpm fmt` or `vite.config.ts`'s `lint` and `fmt` sections reach. An
+`pint` leaves out Blade templates, `vendor/` and `node_modules/` the way a
+bare `pint` run does, and the formatter's hook covers `resources/` and the
+root `*.config.ts` files, what `pnpm fmt` or `vite.config.ts`'s `lint` and
+`fmt` sections reach. An
 app that widens a script's scope has to widen the pattern here too, or the
 hook either misses files or rewrites ones the script never touched.
 

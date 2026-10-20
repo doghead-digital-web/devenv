@@ -127,6 +127,7 @@ in
     hooks = {
       git-hooks-run = {
         name = "Run git-hooks on the edited file";
+        matcher = "^(Edit|Write|MultiEdit|NotebookEdit)$";
         command = ''
           file=$(${jq} -r '.tool_input.file_path // empty')
           [ -f "$file" ] || exit 0

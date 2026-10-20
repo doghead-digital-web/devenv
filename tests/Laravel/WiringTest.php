@@ -80,8 +80,28 @@ test('each shared hook runs on its event and watches its tools', function (strin
     ['ask-before-publishing', 'PreToolUse', '^(Bash|Monitor)$'],
     ['block-quality-gate-shell-writes', 'PreToolUse', '^(Bash|Monitor)$'],
     ['block-quality-gate-edits', 'PreToolUse', '^(Edit|Write|MultiEdit|NotebookEdit)$'],
-    ['git-hooks-run', 'PostToolUse', ''],
+    ['git-hooks-run', 'PostToolUse', '^(Edit|Write|MultiEdit|NotebookEdit)$'],
     ['builder-ci-gate', 'TaskCompleted', ''],
+]);
+
+test('pint never rewrites an installed dependency, and still formats app code', function (string $file, bool $excluded): void {
+    $result = Process::path(module_path('tests/fixtures/app'))
+        ->env(['CI' => false])
+        ->timeout(600)
+        ->run(['devenv', 'eval', 'git-hooks.hooks.pint.excludes']);
+
+    Assert::assertTrue($result->successful(), $result->errorOutput());
+
+    /** @var array{'git-hooks.hooks.pint.excludes': list<string>} $evaluated */
+    $evaluated = json_decode($result->output(), true);
+    $matches = array_filter($evaluated['git-hooks.hooks.pint.excludes'], fn (string $pattern): bool => preg_match('#'.$pattern.'#', $file) === 1);
+
+    expect($matches !== [])->toBe($excluded);
+})->with([
+    ['vendor/laravel/framework/src/Illuminate/Support/Str.php', true],
+    ['node_modules/some-package/stub.php', true],
+    ['app/Models/User.php', false],
+    ['tests/Feature/vendor/ExampleTest.php', false],
 ]);
 
 test('the publishing hook runs a /nix/store copy of ask-before-publishing.sh', function (): void {
