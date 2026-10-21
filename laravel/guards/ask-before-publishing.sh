@@ -53,6 +53,107 @@ has -e "$git"'[^;&|[:space:]]*alias\.' -e "$git"'send-pack' && ask
 
 has "$b"'gh([^[:alnum:]_.-]|$)' || exit 0
 
+reads='^gh (pr (view|list|status|checks|diff)|issue (view|list)|repo view|run (list|view|watch)|auth status|release (view|list))( |$)'
+draft='^gh pr create (--draft|-d)( |$)'
+stack='^gh stack (view|push|sync|link|submit|rebase|add|init|top|bottom|up|down|checkout)( |$)'
+stackmain='--open|--base| main( |$)'
+token='^gh auth status( .*)? (--show-token|-[A-Za-z]*t)'
+rgexec='--pre|--hostname-bin'
+
+api_get() {
+    local w=("$@") i endpoints=0
+    [[ "${w[0]-} ${w[1]-}" == 'gh api' ]] || return 1
+    for ((i = 2; i < ${#w[@]}; i++)); do
+        case "${w[i]}" in
+            --paginate | --slurp | -i | --include | --silent) ;;
+            --jq | -q | --cache)
+                i=$((i + 1))
+                [[ "${w[i]-}" == -* ]] && return 1
+                ;;
+            -h | --header)
+                i=$((i + 1))
+                [[ "${w[i]-}" == -* ]] && return 1
+                printf '%s' "${w[i]-}" | grep -qi override && return 1
+                ;;
+            -x | --method)
+                i=$((i + 1))
+                [[ "${w[i]-}" == get ]] || return 1
+                ;;
+            -* | graphql) return 1 ;;
+            *) endpoints=$((endpoints + 1)) ;;
+        esac
+    done
+    [[ "$endpoints" == 1 ]]
+}
+
+read_only() {
+    local g="$*" f
+    case "$1" in
+        gh)
+            [[ "$g" =~ $token ]] && return 1
+            [[ "$g" =~ $reads || "$g" =~ ^gh\ stack\ view( |$) ]] || api_get "$@"
+            ;;
+        git)
+            case "${2-}" in
+                status | rev-parse | merge-tree) ;;
+                log | show | diff) [[ "$g" != *--output* ]] ;;
+                branch)
+                    for f in "${@:3}"; do
+                        case "$f" in
+                            -r | --remotes | -a | --all | -v | -vv | --verbose | -l | --list | --show-current | --no-color) ;;
+                            -*) return 1 ;;
+                            *) [[ " $g " == *' --list '* || " $g " == *' -l '* ]] || return 1 ;;
+                        esac
+                    done
+                    ;;
+                fetch)
+                    for f in "${@:3}"; do
+                        case "$f" in
+                            -p | --prune | --all | -q | --quiet | -v | --verbose | -t | --tags | --no-tags | --dry-run) ;;
+                            -*) return 1 ;;
+                        esac
+                    done
+                    ;;
+                *) return 1 ;;
+            esac
+            ;;
+        rg) [[ ! "$g" =~ $rgexec ]] ;;
+        grep | jq | head | tail | wc | cat | ls | date) ;;
+        *) return 1 ;;
+    esac
+}
+
+chain_reads() {
+    local pieces w
+    pieces=$(CMD="$cmd" perl -e '
+        my $s = $ENV{CMD};
+        exit 1 if $s =~ /[`\$\{\}<>\\\n\r]/;
+        my @pieces = ([]);
+        my $w;
+        my $end = sub { push @{ $pieces[-1] }, length $w ? $w : "\x1f" if defined $w; undef $w };
+        for ($s) {
+            until (/\G\z/gc) {
+                if (/\G[ \t]+/gc) { $end->() }
+                elsif (/\G(?:;|&&|\|\|?)/gc) { $end->(); @{ $pieces[-1] } or exit 1; push @pieces, [] }
+                elsif (/\G([A-Za-z0-9_.\/:=,@%+-]+)/gc) { $w .= $1 }
+                elsif (/\G\x27([^\x27]*)\x27/gc || /\G"([^"]*)"/gc) { (my $q = $1) =~ s/\s/\x1f/g; $w .= $q }
+                else { exit 1 }
+            }
+        }
+        $end->();
+        @{ $pieces[-1] } or exit 1;
+        for (@pieces) {
+            @$_ = map { lc } @$_ if lc $_->[0] eq "gh";
+            print "@$_\n";
+        }
+    ') || return 1
+    while read -ra w; do
+        read_only "${w[@]}" || return 1
+    done <<<"$pieces"
+}
+
+chain_reads && exit 0
+
 joined=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g') || ask
 case "$joined" in *[\;\&\`\{]* | *\$\(* | *'<('* | *'>('* | *$'\n'*) ask ;; esac
 case "$norm" in *'|'*'|'*) ask ;; esac
@@ -60,16 +161,10 @@ invocation="${words%%|*}"
 if [[ "$invocation" != "$words" ]]; then
     filter="${words#*|}"
     [[ "$filter" =~ ^[[:space:]]*(jq|head|tail|rg|grep|wc)([[:space:]]|$) ]] || ask
-    [[ "$filter" == *--pre* ]] && ask
+    [[ "$filter" =~ $rgexec || "${norm#*|}" =~ $rgexec ]] && ask
 fi
 read -ra w <<<"$invocation"
 g="${w[*]}"
-
-reads='^gh (pr (view|list|status|checks|diff)|issue (view|list)|repo view|run (list|view|watch)|auth status|release (view|list))( |$)'
-draft='^gh pr create (--draft|-d)( |$)'
-stack='^gh stack (view|push|sync|link|submit|rebase|add|init|top|bottom|up|down|checkout)( |$)'
-stackmain='--open|--base| main( |$)'
-token='^gh auth status( .*)? (--show-token|-[A-Za-z]*t)'
 
 [[ "$g" =~ $token ]] && ask
 [[ "$g" =~ $reads ]] && exit 0
@@ -83,27 +178,5 @@ if [[ "$g" =~ $stack ]]; then
     [[ "$g" =~ $stackmain ]] && ask
     exit 0
 fi
-[[ "${w[0]-} ${w[1]-}" == 'gh api' ]] || ask
-endpoints=0
-for ((i = 2; i < ${#w[@]}; i++)); do
-    case "${w[i]}" in
-        --paginate | --slurp | -i | --include | --silent) ;;
-        --jq | -q | --cache)
-            i=$((i + 1))
-            [[ "${w[i]-}" == -* ]] && ask
-            ;;
-        -h | --header)
-            i=$((i + 1))
-            [[ "${w[i]-}" == -* ]] && ask
-            printf '%s' "${w[i]-}" | grep -qi override && ask
-            ;;
-        -x | --method)
-            i=$((i + 1))
-            [[ "${w[i]-}" == get ]] || ask
-            ;;
-        -* | graphql) ask ;;
-        *) endpoints=$((endpoints + 1)) ;;
-    esac
-done
-[[ "$endpoints" == 1 ]] || ask
+api_get "${w[@]}" || ask
 exit 0

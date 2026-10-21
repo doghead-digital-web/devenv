@@ -515,7 +515,7 @@ passes.
 
 gh is an allowlist, because a denylist of bad gh forms leaked a new form in
 each of three verify rounds. Any command with `gh` as a word asks unless it
-is a single gh command, with no `;`, `&`, `||`, `$(`, `<(`, `>(`, backtick,
+is a line made only of reads (below) or a single gh command, with no `;`, `&`, `||`, `$(`, `<(`, `>(`, backtick,
 `{` or newline, even inside quotes, of one of these shapes, with the group
 and subcommand straight after `gh`:
 
@@ -536,7 +536,8 @@ and subcommand straight after `gh`:
   without `--open`, `--base` or a bare `main`
 
 Any of these but `gh pr create` may end in one pipe into `jq`, `head`,
-`tail`, `rg` (not `--pre`), `grep` or `wc`. Everything else asks: `gh pr
+`tail`, `rg` (not `--pre` or `--hostname-bin`, both of which run a program,
+even spelled `--p''re`), `grep` or `wc`. Everything else asks: `gh pr
 merge|ready|new|close|edit`, `gh stack merge|unstack`, the rest of `gh
 repo`, `gh alias`, `gh secret`, `gh workflow`, `gh release create`, any
 `-R`/`--repo` before the subcommand, and a `gh` behind `env`, `xargs`, `bash
@@ -547,6 +548,44 @@ main`), brace or glob characters in a command's first word (`{git,} push
 …`) and GitHub API calls made without gh, such as curl with a token from
 `git credential fill`, are JSH-51's, with the other commands built at run
 time.
+
+### A line made only of reads passes
+
+Agents check state with one line of several reads, such as `gh repo view
+--json visibility; git branch -r | rg feat-x`, and asking about each one
+stalled panes with nobody at the laptop. So before the rules above, the guard
+splits the line on `;`, `&&`, `||` and `|` and passes it when every piece is
+one of these reads:
+
+- a gh read from the list above, `gh stack view`, or a `gh api` GET of the
+  shape above
+- `git status`, `rev-parse`, `merge-tree`, and `log`, `show` or `diff`
+  without `--output`, each with `git` straight before the subcommand
+- `git branch` whose only flags are `-r`/`--remotes`, `-a`/`--all`,
+  `-v`/`-vv`/`--verbose`, `-l`/`--list`, `--show-current` and `--no-color`,
+  and which names a pattern only after `-l` or `--list`, so it cannot create
+  a branch
+- `git fetch` whose only flags are `-p`/`--prune`, `--all`, `-q`/`--quiet`,
+  `-v`/`--verbose`, `-t`/`--tags`, `--no-tags` and `--dry-run`. This is an
+  allow-list because git takes any unambiguous abbreviation of a long
+  option, and `--upl=<cmd>` is `--upload-pack`, which runs `<cmd>`
+- `rg` (without `--pre` or `--hostname-bin`), `grep`, `jq`, `head`, `tail`,
+  `wc`, `cat`, `ls` and `date`
+
+A piece whose first word is anything else, an environment assignment
+included, makes the whole line fall through to the rules above, so a read
+chained with `gh pr merge`, `git push`, `gh pr create --draft` or `echo`
+asks as it did before. The split falls through the same way on anything it
+can't read cleanly: `$`, a backtick, a brace, `<`, `>`, a backslash or a
+newline anywhere, quoted or not; outside quotes, any character but letters,
+digits, `_./:=,@%+-`, spaces and the separators, which rules out globs,
+`#`, `(`, a lone `&` and `|&`; an empty piece; or an unclosed quote. A quoted
+string is one word, so `rg 'a|b'` is not split.
+
+The other pieces are reads an agent could already run on their own line,
+because a line with no `gh` word only meets the push checks. What the split
+adds is that a gh read can share the line, so it has to see the same
+pieces the shell does.
 
 The hook runs from a `/nix/store` copy of
 `guards/ask-before-publishing.sh`, with every tool it calls pinned, so a
