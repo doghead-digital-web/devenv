@@ -475,9 +475,10 @@ pane, tab or agent control of another worktree.
 
 Joey reviews a feature as draft PRs, so a verified feature's branches and
 draft PRs publish without a prompt: `git push [-u] origin <branch>`, `gh pr
-create --draft`, and `gh stack push`, `submit`, `sync` and `link`.
-Merging, readying a PR, pushing to `main`, force-pushing outside `gh stack`
-and any `gh` command the guard does not recognise wait for Joey. This is
+create --draft`, `gh stack push`, `submit`, `sync` and `link`, a PR's title
+and body, and `gh pr ready` (see "A PR's title, body and ready flag pass").
+Merging, retargeting a PR, pushing to `main`, force-pushing outside `gh
+stack` and any `gh` command the guard does not recognise wait for Joey. This is
 JSHQ's policy, now every app's; Harvst's earlier rule, that any push or
 pull request asks, is retired.
 
@@ -538,7 +539,8 @@ and subcommand straight after `gh`:
 Any of these but `gh pr create` may end in one pipe into `jq`, `head`,
 `tail`, `rg` (not `--pre` or `--hostname-bin`, both of which run a program,
 even spelled `--p''re`), `grep` or `wc`. Everything else asks: `gh pr
-merge|ready|new|close|edit`, `gh stack merge|unstack`, the rest of `gh
+merge|new|close`, `gh pr edit` and `gh pr ready` outside the shapes in "A
+PR's title, body and ready flag pass" below, `gh stack merge|unstack`, the rest of `gh
 repo`, `gh alias`, `gh secret`, `gh workflow`, `gh release create`, any
 `-R`/`--repo` before the subcommand, and a `gh` behind `env`, `xargs`, `bash
 -c` or a path. Because `gh` as any word triggers the check, a commit message
@@ -586,6 +588,42 @@ The other pieces are reads an agent could already run on their own line,
 because a line with no `gh` word only meets the push checks. What the split
 adds is that a gh read can share the line, so it has to see the same
 pieces the shell does.
+
+### A PR's title, body and ready flag pass
+
+Publishing a verified stack means a title, a body and `gh pr ready` on every
+PR, and asking about each one cost Joey about six prompts a stack. None of
+them merges anything, pushes to `main` or moves a PR's base, so a single gh
+command of one of these shapes passes:
+
+- `gh pr ready <number>`
+- `gh pr edit <number>` with at least one of `--title <text>` and
+  `--body-file <path>`
+
+Each may add `--repo <owner>/<name>`. Every flag is spelled in full, as
+`--flag value` or `--flag=value`, and nothing else may appear. The rule is
+an allow-list, because every other `gh pr edit` flag changes something Joey
+should see: `--base` retargets a PR, `--add-*`/`--remove-*` change reviewers,
+labels and projects, and `--milestone` files it. gh's flag parser takes no
+abbreviations, so `--tit` is an unknown flag to gh and asks here. Short flags
+(`-t`, `-F`, `-R`), `--undo`, `--body` (an inline body), a second PR
+number, a branch name or URL in place of the number, `--` and a value that
+starts with `-` all ask.
+
+`--body-file` must name a file ending in `.md`. The body is published in the
+PR, so `--body-file .env`, `-` (stdin) or `id_rsa` asks. A `.md` file
+anywhere on disk still passes, the same as `gh pr create --draft
+--body-file` already does. That gap is accepted rather than closed with a
+path allow-list, because PR bodies are written to scratch and team folders
+whose absolute paths vary by session.
+
+The line also falls through to the rules above, and so asks, when it has a
+pipe, `$`, a backtick, a brace, `<`, `>` (a redirect), a backslash or any
+control character (a tab, a carriage return, a newline) anywhere, quoted or
+not, or a glob character or `~` outside quotes. Chained after anything else,
+it asks as before, because the read-only split above doesn't include it. An
+environment assignment in front (`GH_HOST=… gh pr ready 12`) asks too,
+because `gh` must be the first word.
 
 The hook runs from a `/nix/store` copy of
 `guards/ask-before-publishing.sh`, with every tool it calls pinned, so a

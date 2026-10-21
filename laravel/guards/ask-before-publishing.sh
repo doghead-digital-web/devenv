@@ -12,7 +12,7 @@ field() {
 }
 
 ask() {
-    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Merging and pushing to main need Joey. Feature branches and draft PRs publish freely, but merging, readying a PR, pushing to main, or force-pushing outside gh stack waits for approval from Joey."}}'
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Merging and pushing to main need Joey. Feature branches, draft PRs, PR titles and bodies, and readying a PR publish freely, but merging, retargeting a PR, pushing to main, or force-pushing outside gh stack waits for approval from Joey."}}'
     exit 0
 }
 
@@ -84,6 +84,41 @@ api_get() {
         esac
     done
     [[ "$endpoints" == 1 ]]
+}
+
+pr_edit_ready() {
+    local w=("$@") i n=0 m=0 repo='^[a-z0-9_.-]+/[a-z0-9_.-]+$'
+    [[ "${w[0]-} ${w[1]-}" == 'gh pr' ]] || return 1
+    case "${w[2]-}" in edit | ready) ;; *) return 1 ;; esac
+    for ((i = 3; i < ${#w[@]}; i++)); do
+        case "${w[i]}" in
+            --repo=*) [[ "${w[i]#--repo=}" =~ $repo ]] || return 1 ;;
+            --repo)
+                i=$((i + 1))
+                [[ "${w[i]-}" =~ $repo ]] || return 1
+                ;;
+            --title=* | --title | --body-file=* | --body-file)
+                [[ "${w[2]}" == edit ]] || return 1
+                local flag="${w[i]%%=*}" v
+                if [[ "${w[i]}" == *=* ]]; then
+                    v="${w[i]#*=}"
+                else
+                    i=$((i + 1))
+                    v="${w[i]-}"
+                fi
+                [[ "$v" =~ ^[^-] ]] || return 1
+                [[ "$flag" == --body-file && ! "$v" =~ \.md$ ]] && return 1
+                m=$((m + 1))
+                ;;
+            -*) return 1 ;;
+            *)
+                [[ "${w[i]}" =~ ^[0-9]+$ ]] || return 1
+                n=$((n + 1))
+                ;;
+        esac
+    done
+    [[ "$n" == 1 ]] || return 1
+    [[ "${w[2]}" == ready || "$m" -gt 0 ]]
 }
 
 read_only() {
@@ -176,6 +211,12 @@ if [[ "$g" =~ $draft ]]; then
 fi
 if [[ "$g" =~ $stack ]]; then
     [[ "$g" =~ $stackmain ]] && ask
+    exit 0
+fi
+if pr_edit_ready "${w[@]}"; then
+    [[ "$invocation" == "$words" ]] || ask
+    case "$cmd" in *[\$\`\{\}\<\>\\]* | *[[:cntrl:]]*) ask ;; esac
+    case "$unquoted" in *[\*\?\[\~]*) ask ;; esac
     exit 0
 fi
 api_get "${w[@]}" || ask
