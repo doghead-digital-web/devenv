@@ -10,6 +10,7 @@ let
 
   grep = lib.getExe pkgs.gnugrep;
   git = lib.getExe config.git-hooks.gitPackage;
+  sed = lib.getExe pkgs.gnused;
   cmp = lib.getExe' pkgs.diffutils "cmp";
   install = lib.getExe' pkgs.coreutils "install";
 
@@ -42,21 +43,12 @@ let
     rm -f "$hooks/${hookType}.legacy"
   '';
 
-  commitMsgFormat = pkgs.writeShellScript "commit-msg-format" ''
-    subject=$(head -n1 "$1")
-    conventional='^((\[[A-Z]+-[0-9]+(\.[0-9]+)*\])+ )?(feat|fix|docs|deps|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: .+'
-    tooling='^(Merge|Revert|fixup!|squash!|amend!) '
-    if printf '%s' "$subject" | ${grep} -Eq -e "$conventional" -e "$tooling"; then
-      exit 0
-    fi
-    {
-      echo "✗ commit subject does not match the convention:"
-      echo "    ${cfg.commitExample}"
-      echo "    fix(ui): what changed"
-      echo "  got: $subject"
-    } >&2
-    exit 1
-  '';
+  commitHooks = import ./scripts/commit-hooks.nix {
+    inherit grep git sed;
+    inherit (cfg) commitExample;
+  };
+  commitMsgFormat = pkgs.writeShellScript "commit-msg-format" commitHooks.commitMsgFormat;
+  scratchIds = pkgs.writeShellScript "scratch-ids" commitHooks.scratchIds;
 
   jsHooks = {
     vite-plus.vp-check = {
@@ -126,6 +118,14 @@ in
         entry = "${commitMsgFormat}";
         language = "system";
         stages = [ "commit-msg" ];
+      };
+      scratch-ids = {
+        enable = true;
+        name = "no team-scratch ids";
+        entry = "${scratchIds}";
+        language = "system";
+        pass_filenames = false;
+        files = "(^tests/|CONTEXT\\.md$)";
       };
       no-commit-to-branch.enable = true;
       check-merge-conflicts.enable = true;

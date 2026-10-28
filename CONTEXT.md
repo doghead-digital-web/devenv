@@ -854,6 +854,34 @@ the formatter's hook and `arch`, which `ci-lint` already checks through
 at commit time. A new hook that no composer or pnpm script covers belongs in
 `ci-hooks`, not in the skip list.
 
+## Team-scratch ids stay out of commits, tests and `CONTEXT.md`
+
+A ruling, AC, step, verdict or decision id (`(R15)`, `(AC4,`, `(S10)`,
+`(V2)`, `(D3,`) or a `worked example 2` means something only in the team's
+scratch notes for one feature. In a commit message, a test or a
+`CONTEXT.md` it tells a later reader nothing, and each leak cost a history
+rewrite and a re-gate of every layer. Two hooks refuse them, with the one
+pattern in `scripts/commit-hooks.nix`:
+
+- `commit-msg-format` checks every line of the message, not only the
+  subject, before it checks the subject's convention. It skips `#` lines,
+  which git strips, and everything from git's `>8` scissors line down,
+  which is the diff `git commit -v` appends. Without that, a scratch id
+  anywhere in that diff's context would refuse the commit.
+- `scratch-ids` checks only the lines a commit adds under `tests/` or to
+  any `CONTEXT.md`. It reads the staged diff rather than whole files, so an
+  id already on `main` (`(R31)` in an app's Metrc `CONTEXT.md`) never trips
+  it, and `ci-hooks`, which has nothing staged, passes it. A commit made
+  with `--no-verify` gets past both. A CI check on the branch's diff from
+  its merge base would catch that, and is worth adding only if a leak ever
+  gets past the hooks.
+
+The pattern needs an upper-case letter and digits straight after the
+paren, then `,` or `)`, so `(decision 512)`, `HRVST-215` and
+`[HRVST-215] feat(x): y` pass. `scripts/commit-hooks.nix` is a pure
+function of its tools, so `CommitHooksTest` runs both scripts without a
+devenv shell.
+
 ## `composer-audit` and the one abandoned package
 
 The `composer-audit` pre-push hook fails on abandoned packages as well as
