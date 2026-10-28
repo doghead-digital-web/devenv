@@ -589,6 +589,26 @@ because a line with no `gh` word only meets the push checks. What the split
 adds is that a gh read can share the line, so it has to see the same
 pieces the shell does.
 
+### A read line held up only by `2>&1` or `>/dev/null` is refused
+
+The split gives up on any `<` or `>`, so `gh stack view --json 2>&1 | head
+-50` asked, and with nobody at the laptop two panes sat parked on it for
+about 13 hours. Agents are meant to run each gh command bare and read all
+of its output, so rather than pass such a line, whenever
+the guard is about to ask, it first removes every `N>&M` (such as `2>&1`)
+and `>/dev/null` from the line, in any of the spellings `>/dev/null`,
+`2>/dev/null` and `2> /dev/null`. If that leaves a line the split above
+passes, the guard denies it with a message telling the agent to rerun each
+gh command bare, and the agent can act on that without Joey.
+
+A deny only ever replaces an ask, never a pass. A lone read that passed
+before still passes, so `gh pr view 12 2>/dev/null`, and even `gh stack
+view > out.txt`, pass as they always have. A redirect to a file stays in the
+line, so the split still refuses it and the line asks, as does any line
+that still holds a write or an unknown command once the redirects are gone.
+Because the removal works on the raw text, a quoted `'2>&1'` goes too. That
+can only turn an ask into a deny, and a deny runs nothing.
+
 ### A PR's title, body and ready flag pass
 
 Publishing a verified stack means a title, a body and `gh pr ready` on every
