@@ -98,7 +98,7 @@
   fi
   agent_name=$(printf 'lead-%s' "$worktree" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | cut -c1-32)
   herdr agent start "$agent_name" --kind claude --pane "$agent_pane" --timeout 120000 -- \
-    --agent feature-lead -n "$worktree" >/dev/null
+    --agent feature-lead -n "$worktree" --remote-control >/dev/null
   herdr agent prompt "$agent_name" "$brief" >/dev/null
 
   echo "feature: $worktree is open in herdr as agent $agent_name"

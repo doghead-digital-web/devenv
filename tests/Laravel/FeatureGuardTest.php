@@ -230,6 +230,7 @@ test('a worktree opens as a feature lead in herdr, with the full launch sequence
         ->and($agentStart)->not->toBeNull()
         ->and($agentStart)->toContain('lead-jsh-3-happy')
         ->and($agentStart)->toContain('--agent feature-lead')
+        ->and($agentStart)->toContain('--remote-control')
         ->and($agentStart)->not->toContain('You are the feature lead')
         ->and($agentPrompt)->not->toBeNull()
         ->and($agentPrompt)->toContain('You are the feature lead')
