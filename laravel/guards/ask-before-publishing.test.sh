@@ -569,6 +569,12 @@ check ask 'gh pr view 1; bash -c "gh api repos/o/r/pulls/1/merge -X=PUT"'
 check ask "echo x | xargs gh api repos/o/r/pulls -Fdraft=false"
 check unsure 'gh pr view 1; bash -c "gh api repos/o/r/pulls --jq .f"'
 
+check ask 'gh api repos/o/r/pulls --field title=x'
+check ask 'gh api repos/o/r/pulls --field=title=x'
+check ask 'gh api repos/o/r/merges --raw-field base=main'
+check ask 'gh api repos/o/r/merges --raw-field=base=main'
+check ask 'gh pr view 1; gh api repos/o/r/pulls --raw-field=title=x'
+
 [[ -z "$SETTINGS" ]] || check_store
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
