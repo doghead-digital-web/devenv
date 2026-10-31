@@ -539,6 +539,15 @@ check pass $'gh pr view 1 --json title | grep -c a\\b'
 check pass "gh pr view 1; grep -rn 'a|b' src"
 check pass 'gh pr view 1 | grep -E -e x -A2'
 
+check ask "gh api repos/o/r/pulls/1/merge -H x-a:b\\' -X PUT -H \\'x-c:d"
+check ask "gh api repos/o/r/pulls/1/merge --jq .x\\' -X PUT -q \\'.y"
+check ask "gh api repos/o/r/pulls/1/merge -H x\\' --method PUT -H \\'y"
+check ask 'gh api repos/o/r/pulls/1/merge -H x\" -X PUT -H \"y'
+check ask "gh pr edit 12 --title a\\' --base main --title \\'b"
+check ask "gh pr ready 12 x\\' --undo \\'y"
+check unsure "gh pr view 1 | grep \\' --filter=txt:./x.sh \\' a.txt"
+check unsure "gh pr view 1 --json title | grep \\' --filter=x \\' a"
+
 [[ -z "$SETTINGS" ]] || check_store
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

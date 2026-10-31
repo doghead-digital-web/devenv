@@ -29,8 +29,8 @@ cwd=$(field cwd) || ask
 
 flat=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g; s/\n/ /g') || ask
 norm=$(printf '%s' "$flat" | perl -0777 -pe 's/["\x27\\]//g; $_ = lc') || ask
-words=$(printf '%s' "$flat" | perl -0777 -pe 's{\x27([^\x27]*)\x27|"((?:[^"\\]|\\.)*)"}{my $s = $1 // $2; $s =~ s/\s/\x1f/g; length $s ? $s : "\x1f"}ge; s/["\x27\\]//g; $_ = lc') || ask
-wordscase=$(printf '%s' "$flat" | perl -0777 -pe 's{\x27([^\x27]*)\x27|"((?:[^"\\]|\\.)*)"}{my $s = $1 // $2; $s =~ s/\s/\x1f/g; length $s ? $s : "\x1f"}ge; s/["\x27\\]//g') || ask
+wordscase=$(printf '%s' "$flat" | perl -0777 -pe 's{\\(.)|\x27([^\x27]*)\x27|"((?:[^"\\]|\\.)*)"}{if (defined $1) { $1 =~ /\s/ ? "\x1f" : $1 } else { my $s = $2 // $3; $s =~ s/\s/\x1f/g; length $s ? $s : "\x1f" }}ge; s/["\x27\\]//g') || ask
+words=$(printf '%s' "$wordscase" | perl -pe '$_ = lc') || ask
 unquoted=$(printf '%s' "$cmd" | sed -E "s/\"[^\"]*\"//g; s/'[^']*'//g") || ask
 
 has() { printf '%s' "$norm" | grep -Eq "$@" || printf '%s' "$words" | grep -Eq "$@"; }
