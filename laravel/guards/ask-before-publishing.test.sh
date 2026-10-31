@@ -493,6 +493,13 @@ check ask 'gh pr view 12; printf -vPATH x'
 check ask "gh pr view 12; printf '-v' PATH x"
 check ask 'gh pr view 12; printf -- x'
 check pass "gh pr view 12; printf '%s' x"
+check pass 'git status; gh api repos/o/r/contents/a.php?ref=v1 --jq .content'
+check ask 'gh pr view 12; git log ?-output=x'
+check ask 'gh pr view 12; gh api ?XPUT repos/o/r'
+check ask 'gh pr view 12; git log -?'
+check ask 'gh pr view 12; uniq a?'
+check ask "gh pr view 12; echo '-'?x"
+check pass $'echo "===== a.php ====="\ngh api repos/laravel/ai/contents/src/a.php?ref=v1.3.0 --jq \'.content\' | base64 -d\necho "===== b.php ====="\ngh api repos/laravel/ai/contents/src/b.php?ref=v1.3.0 --jq \'.content\' | base64 -d'
 
 [[ -z "$SETTINGS" ]] || check_store
 
