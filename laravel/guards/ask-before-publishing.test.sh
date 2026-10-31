@@ -564,6 +564,11 @@ long=$(printf 'a%.0s' $(seq 1 200))
 check unsure "gh pr view 12; ./x.sh -${long}?" clean '' "-$(printf 'a%.0s' $(seq 1 100))"
 check "missing text" "gh pr view 12; ./x.sh -${long}?" clean '' "$(printf 'a%.0s' $(seq 1 125))"
 
+check ask 'gh pr view 1; bash -c "gh api repos/o/r/pulls -fkey=val"'
+check ask 'gh pr view 1; bash -c "gh api repos/o/r/pulls/1/merge -X=PUT"'
+check ask "echo x | xargs gh api repos/o/r/pulls -Fdraft=false"
+check unsure 'gh pr view 1; bash -c "gh api repos/o/r/pulls --jq .f"'
+
 [[ -z "$SETTINGS" ]] || check_store
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

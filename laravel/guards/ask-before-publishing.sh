@@ -311,7 +311,7 @@ publish_pr='gh[^;&|]*[[:space:]]pr[[:space:]]+(merge|create|new|edit|ready|close
 publish_stack='gh[^;&|]*[[:space:]]stack[[:space:]]+(merge|unstack)([^[:alnum:]_.-]|$)'
 publish_repo='gh[^;&|]*[[:space:]]repo[[:space:]]+(clone|create|delete|edit|fork|list|rename|set-default|sync|archive|unarchive)([^[:alnum:]_.-]|$)'
 publish_release='gh[^;&|]*[[:space:]]release[[:space:]]+create([^[:alnum:]_.-]|$)'
-publish_api='gh[^;&|]*[[:space:]]api[^;&|]*(graphql|(^|[[:space:]])-{1,2}(f|field|raw-field|input)([[:space:]=]|$)|-i?x[[:space:]]*(put|delete|patch|post)|--method[[:space:]=]*(put|delete|patch|post))'
+publish_api='gh[^;&|]*[[:space:]]api[^;&|]*(graphql|(^|[[:space:]])-{1,2}(f|field|raw-field|input)([[:space:]=]|$)|-[a-z]*f[^[:space:];&|]+|-i?x[[:space:]=]*(put|delete|patch|post)|--method[[:space:]=]*(put|delete|patch|post))'
 
 if ((${#REFUSED_PIECES[@]})); then
     is_publish=0
