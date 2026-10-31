@@ -19,7 +19,7 @@ ask() {
 cmd=$(field command) || ask
 cwd=$(field cwd) || ask
 
-flat=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g; s/\n/ /g') || ask
+flat=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g; s/[\r\n]/ /g') || ask
 norm=$(printf '%s' "$flat" | perl -0777 -pe 's/["\x27\\]//g; $_ = lc') || ask
 words=$(printf '%s' "$flat" | perl -0777 -pe 's{\x27([^\x27]*)\x27|"((?:[^"\\]|\\.)*)"}{my $s = $1 // $2; $s =~ s/\s/\x1f/g; length $s ? $s : "\x1f"}ge; s/["\x27\\]//g; $_ = lc') || ask
 unquoted=$(printf '%s' "$cmd" | sed -E "s/\"[^\"]*\"//g; s/'[^']*'//g") || ask
@@ -162,16 +162,18 @@ chain_reads() {
     local pieces w
     pieces=$(CMD="$cmd" perl -e '
         my $s = $ENV{CMD};
-        exit 1 if $s =~ /[`\$\{\}<>\\\n\r]/;
+        exit 1 if $s =~ /[`\$\{\}<>\\\r]/;
         my @pieces = ([]);
         my $w;
+        my $need_new_piece = 0;
         my $end = sub { push @{ $pieces[-1] }, length $w ? $w : "\x1f" if defined $w; undef $w };
         for ($s) {
             until (/\G\z/gc) {
                 if (/\G[ \t]+/gc) { $end->() }
-                elsif (/\G(?:;|&&|\|\|?)/gc) { $end->(); @{ $pieces[-1] } or exit 1; push @pieces, [] }
-                elsif (/\G([A-Za-z0-9_.\/:=,@%+-]+)/gc) { $w .= $1 }
-                elsif (/\G\x27([^\x27]*)\x27/gc || /\G"([^"]*)"/gc) { (my $q = $1) =~ s/\s/\x1f/g; $w .= $q }
+                elsif (/\G\n/gc) { $end->(); $need_new_piece = 1 if @{ $pieces[-1] } }
+                elsif (/\G(?:;|&&|\|\|?)/gc) { exit 1 if $need_new_piece; $end->(); @{ $pieces[-1] } or exit 1; push @pieces, [] }
+                elsif (/\G([A-Za-z0-9_.\/:=,@%+-]+)/gc) { push(@pieces, []), ($need_new_piece = 0) if $need_new_piece; $w .= $1 }
+                elsif (/\G\x27([^\x27]*)\x27/gc || /\G"([^"]*)"/gc) { exit 1 if $1 =~ /\n/; push(@pieces, []), ($need_new_piece = 0) if $need_new_piece; (my $q = $1) =~ s/\s/\x1f/g; $w .= $q }
                 else { exit 1 }
             }
         }
