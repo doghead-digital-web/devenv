@@ -252,7 +252,7 @@ chain_reads() {
     SPLIT_FAIL_INFO=
     pieces=$(CMD="$cmd" perl -e '
         my $s = $ENV{CMD};
-        if ($s =~ /([`\$\{\}<>\\\r])/) { print $1; exit 1 }
+        if ($s =~ /([`\$\{\}<>\\\r])/) { print $1 eq "\r" ? "CR" : $1; exit 1 }
         my @pieces = ([]);
         my $w;
         my $need_new_piece = 0;
@@ -280,7 +280,7 @@ chain_reads() {
                 elsif (/\G([A-Za-z0-9_.\/:=,@%+?-]+)/gc) { my $t = $1; push(@pieces, []), ($need_new_piece = 0) if $need_new_piece; $uq ||= ($t =~ /\?/); $w .= $t }
                 elsif (/\G\x27([^\x27]*)\x27/gc || /\G"([^"]*)"/gc) {
                     my $q0 = $1;
-                    if ($q0 =~ /\n/) { print "\n"; exit 1 }
+                    if ($q0 =~ /\n/) { print "newline"; exit 1 }
                     push(@pieces, []), ($need_new_piece = 0) if $need_new_piece;
                     (my $q = $q0) =~ s/\s/\x1f/g;
                     $w .= $q;
@@ -321,9 +321,13 @@ if ((${#REFUSED_PIECES[@]})); then
             break
         fi
     done
+    if ((!is_publish)) && has -e "$publish_pr" -e "$publish_stack" -e "$publish_repo" -e "$publish_release" -e "$publish_api"; then
+        is_publish=1
+    fi
     if ((!is_publish)); then
         reason_text=
         for rp in "${REFUSED_PIECES[@]}"; do
+            rp="${rp//$'\x1f'/ }"
             reason_text="${reason_text:+$reason_text; }${rp:0:120}"
         done
         UNCONFIRMED_REASON="${reason_text:0:400}"
@@ -331,7 +335,7 @@ if ((${#REFUSED_PIECES[@]})); then
 elif has -e "$publish_pr" -e "$publish_stack" -e "$publish_repo" -e "$publish_release" -e "$publish_api"; then
     :
 else
-    UNCONFIRMED_REASON="it couldn't split the line at \"${SPLIT_FAIL_INFO}\""
+    UNCONFIRMED_REASON="it couldn't split the line at \"${SPLIT_FAIL_INFO:0:120}\""
 fi
 
 joined=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g') || ask

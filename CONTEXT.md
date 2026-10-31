@@ -499,6 +499,23 @@ in the subcommand slot, and `--jq ''` would swallow the `-XPUT` after it.
 The subcommand slot and gh's words come from the second reading, and a
 check that matches either reading asks.
 
+The second reading follows bash's own rule for a backslash outside
+quotes: it makes the next character literal, whitespace included (an
+escaped space joins one word, the same as quoted whitespace does), and
+this is tried before pairing quotes, so a backslash-escaped quote never
+gets mistaken for an opening or closing delimiter. Getting this wrong
+let `-H x-a:b\' -X PUT -H \'x-c:d` read as one `-H` value hiding `-X
+PUT`, since the two escaped quotes paired as if they bounded a real
+quoted span; this was true on every reading of the guard, predates the
+two readings themselves, and broke `gh api`'s non-GET refusal, the
+`$'` and `$"` asks below and the grep allow-list's pipe-filter path all
+at once, since all three read from this one reader. Inside single
+quotes nothing escapes, matching bash exactly; inside double quotes
+the existing escape handling is unchanged. The same reading now also
+asks on an unquoted `$'` or `$"`, ANSI-C and locale quoting forms
+neither reading otherwise models, since without that `gh pr view 1
+$"x"` reached the read-prefix match below with no prompt at all.
+
 A push is `push` in git's subcommand slot, after any global options such as
 `-C <dir>`, `-c <k=v>` or `--git-dir <dir>`, so `git stash push` and a
 commit message that says push are not pushes. Any line that runs `git push`
@@ -526,8 +543,12 @@ and subcommand straight after `gh`:
   `gh release view|list`
 - `gh api <endpoint>` whose only flags are `--paginate`, `--slurp`,
   `-i`/`--include`, `--silent`, `--jq`/`-q <expr>`, `-H`/`--header <value>`
-  (not a method override), `--cache <dur>` and `-X`/`--method GET`, each a
-  separate token; `graphql` asks
+  (not a method override, and not a value containing `?`, `*` or `[`: the
+  hook reads command text only and never expands a glob, so a planted file
+  that `-H X-HTTP-Method-Ov?rride:?PUT` would expand against at the shell
+  could otherwise hide an override the text-only check never sees),
+  `--cache <dur>` and `-X`/`--method GET`, each a separate token; `graphql`
+  asks
 - `gh pr create` starting exactly `--draft` or `-d`, with that flag outside
   quoted text, no `--draft=` or `-d=` anywhere (quoted or not, so unbalanced
   quotes cannot hide one), and no pipe. Draft PR bodies therefore go through
@@ -687,28 +708,30 @@ one word) matches a known publishing shape — `gh pr merge|create|new
 `gh release create`, or `gh api` with a method other than GET, a field
 flag (`-f`, `-F`, `--field`, `--raw-field`, `--input`, joined forms
 included) or `graphql` — keep today's text about merging and pushing
-needing Joey.
+needing Joey. This check runs whether the split failed outright or
+succeeded with one or more pieces refused, so a publishing shape hidden
+behind an unrecognised wrapper (`bash -c "gh pr merge 1"`, `echo 12 |
+xargs gh pr merge`) still gets the merge-and-push text rather than
+sounding like the hook merely couldn't read the line.
 
 Everything else gets a different reason: the hook says it could not
 confirm the line is read-only, names what stopped it, and says in one
-sentence what it does let through. When the split itself failed, that name
-is the first character that stopped it (`it couldn't split the line at
-"$"`). When the split succeeded but one or more pieces were not reads,
-it names every refused piece, each cut to 120 characters and the whole
-list to 400, joined with `; ` (`gh pr view 12; ./merge.sh` names
-`./merge.sh`; `gh pr view 1; sed 1q x; ./y.sh` names both pieces). The
-named text is built as a plain string and handed to `JSON::PP` whole,
-never spliced into a JSON string by hand, and every byte outside printable
-ASCII is shown as `\xNN` before encoding, so a quote, backslash or control
-byte inside a refused piece can't break the hook's own JSON or land a raw
-escape sequence in Joey's prompt.
-
-A refused piece rebuilt from a quoted argument with internal spaces (a
-quoted commit message, say) shows the hook's internal word-join
-placeholder character where the original spaces were, since the piece is
-rebuilt from its already-split words rather than the original text. The
-named text is still valid and still names the right piece; this is an
-accepted rough edge, not a parsing bug.
+sentence what it does let through. When the split itself failed, that
+name is the first character that stopped it, cut to 120 characters
+(`it couldn't split the line at "$"`), or `newline`/`CR` in place of the
+raw byte when a bare newline inside a quoted string or a stray `\r`
+is what stopped it. When the split succeeded but one or more pieces were
+not reads, it names every refused piece, each cut to 120 characters and
+the whole list to 400, joined with `; ` (`gh pr view 12; ./merge.sh` names
+`./merge.sh`; `gh pr view 1; sed 1q x; ./y.sh` names both pieces), with
+the hook's internal word-join placeholder character shown as a space, so
+a refused piece rebuilt from a quoted argument with internal spaces (a
+quoted commit message, say) reads with its original spacing rather than
+the placeholder. The named text is built as a plain string and handed to
+`JSON::PP` whole, never spliced into a JSON string by hand, and every
+byte outside printable ASCII is shown as `\xNN` before encoding, so a
+quote, backslash or control byte inside a refused piece can't break the
+hook's own JSON or land a raw escape sequence in Joey's prompt.
 
 Known gaps, pre-existing and already JSH-51's: an earlier write the reads
 above trust by construction, such as a `.gitattributes` `textconv` filter

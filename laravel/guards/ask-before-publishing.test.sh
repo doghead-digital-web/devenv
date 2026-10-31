@@ -229,8 +229,8 @@ check ask $'gh pr edit 12 --title x\t--base main'
 check ask "gh pr edit 12 --ti\"tle\" x --ba''se main"
 check pass "gh pr edit 12 \"--title\" 'x' --body-file \"b.md\""
 check pass '  gh   pr  edit   12    --title   x  '
-check unsure 'GH_HOST=evil.example gh pr ready 12'
-check unsure 'GH_REPO=o/r gh pr edit 12 --title x'
+check ask 'GH_HOST=evil.example gh pr ready 12'
+check ask 'GH_REPO=o/r gh pr edit 12 --title x'
 check ask 'gh pr edit 12 --title x —base main'
 check ask $'gh pr ready 12 \\\n&& gh pr merge 12'
 check ask 'gh pr edit 12 --title x #--base main'
@@ -302,9 +302,9 @@ check ask 'git {push,} origin main'
 check ask 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.up GIT_CONFIG_VALUE_0=push git up origin main'
 check ask $'GIT_CONFIG_PARAMETERS="\'alias.up=push\'" git up origin main'
 check ask 'git push origin alias' symref
-check unsure 'git commit -m "mention gh pr merge"'
-check unsure 'bash -c "gh pr merge 12"'
-check unsure 'echo 12 | xargs gh pr merge'
+check ask 'git commit -m "mention gh pr merge"'
+check ask 'bash -c "gh pr merge 12"'
+check ask 'echo 12 | xargs gh pr merge'
 check unsure 'GH_REPO=o/r gh pr view 12'
 check ask $'gh pr view 12\ngh pr merge 12'
 check unsure 'gh pr view 12 | sh'
@@ -553,6 +553,16 @@ check unsure 'gh pr view 1 $"x"'
 
 check ask 'git status; gh api repos/o/r -H X-HTTP-Method-Ov?rride:?PUT'
 check ask 'gh api repos/o/r -H X-HTTP-Method-Ov?rride:?PUT'
+
+check ask 'gh pr view 1; bash -c "gh pr merge 1"'
+
+check unsure "gh pr view 12; ./x.sh 'a b'" clean '' './x.sh a b'
+check unsure $'gh pr view 12\r\ngit status' clean '' 'CR'
+check unsure 'gh pr view 12; echo "a
+b"' clean '' 'newline'
+long=$(printf 'a%.0s' $(seq 1 200))
+check unsure "gh pr view 12; ./x.sh -${long}?" clean '' "-$(printf 'a%.0s' $(seq 1 100))"
+check "missing text" "gh pr view 12; ./x.sh -${long}?" clean '' "$(printf 'a%.0s' $(seq 1 125))"
 
 [[ -z "$SETTINGS" ]] || check_store
 
