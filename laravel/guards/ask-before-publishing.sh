@@ -12,7 +12,15 @@ field() {
 }
 
 ask() {
-    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Merging and pushing to main need Joey. Feature branches, draft PRs, PR titles and bodies, and readying a PR publish freely, but merging, retargeting a PR, pushing to main, or force-pushing outside gh stack waits for approval from Joey."}}'
+    if [[ -n "${UNCONFIRMED_REASON:-}" ]]; then
+        INPUT="$UNCONFIRMED_REASON" perl -MJSON::PP -e '
+            my $msg = "Joey has to approve: the hook could not confirm this line is read-only ($ENV{INPUT}). It lets through a line made only of known reads joined by ;, &&, || or |, or by newlines.";
+            $msg =~ s/([^\x20-\x7e])/sprintf("\\x%02x", ord($1))/ge;
+            print JSON::PP->new->utf8->encode({hookSpecificOutput=>{hookEventName=>"PreToolUse",permissionDecision=>"ask",permissionDecisionReason=>$msg}});
+        '
+    else
+        printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Merging and pushing to main need Joey. Feature branches, draft PRs, PR titles and bodies, and readying a PR publish freely, but merging, retargeting a PR, pushing to main, or force-pushing outside gh stack waits for approval from Joey."}}'
+    fi
     exit 0
 }
 
@@ -206,17 +214,20 @@ read_only() {
 }
 
 chain_reads() {
-    local pieces w
+    local pieces w ok=1
+    REFUSED_PIECES=()
+    SPLIT_FAIL_INFO=
     pieces=$(CMD="$cmd" perl -e '
         my $s = $ENV{CMD};
-        exit 1 if $s =~ /[`\$\{\}<>\\\r]/;
+        if ($s =~ /([`\$\{\}<>\\\r])/) { print $1; exit 1 }
         my @pieces = ([]);
         my $w;
         my $need_new_piece = 0;
         my $uq = 0;
+        my $lastsep = ";";
         my $end = sub {
             if (defined $w) {
-                exit 1 if $uq && $w =~ /^[-?]/;
+                if ($uq && $w =~ /^[-?]/) { print $w; exit 1 }
                 push @{ $pieces[-1] }, length $w ? $w : "\x1f";
             }
             undef $w;
@@ -226,25 +237,69 @@ chain_reads() {
             until (/\G\z/gc) {
                 if (/\G[ \t]+/gc) { $end->() }
                 elsif (/\G\n/gc) { $end->(); $need_new_piece = 1 if @{ $pieces[-1] } }
-                elsif (/\G(?:;|&&|\|\|?)/gc) { exit 1 if $need_new_piece; $end->(); @{ $pieces[-1] } or exit 1; push @pieces, [] }
+                elsif (/\G(;|&&|\|\|?)/gc) {
+                    $lastsep = $1;
+                    if ($need_new_piece) { print $lastsep; exit 1 }
+                    $end->();
+                    unless (@{ $pieces[-1] }) { print $lastsep; exit 1 }
+                    push @pieces, [];
+                }
                 elsif (/\G([A-Za-z0-9_.\/:=,@%+?-]+)/gc) { my $t = $1; push(@pieces, []), ($need_new_piece = 0) if $need_new_piece; $uq ||= ($t =~ /\?/); $w .= $t }
-                elsif (/\G\x27([^\x27]*)\x27/gc || /\G"([^"]*)"/gc) { exit 1 if $1 =~ /\n/; push(@pieces, []), ($need_new_piece = 0) if $need_new_piece; (my $q = $1) =~ s/\s/\x1f/g; $w .= $q }
-                else { exit 1 }
+                elsif (/\G\x27([^\x27]*)\x27/gc || /\G"([^"]*)"/gc) {
+                    my $q0 = $1;
+                    if ($q0 =~ /\n/) { print "\n"; exit 1 }
+                    push(@pieces, []), ($need_new_piece = 0) if $need_new_piece;
+                    (my $q = $q0) =~ s/\s/\x1f/g;
+                    $w .= $q;
+                }
+                else { print substr($s, pos($s) // 0, 1); exit 1 }
             }
         }
         $end->();
-        @{ $pieces[-1] } or exit 1;
+        unless (@{ $pieces[-1] }) { print $lastsep; exit 1 }
         for (@pieces) {
             @$_ = map { lc } @$_ if lc $_->[0] eq "gh";
             print "@$_\n";
         }
-    ') || return 1
+    ')
+    if (($? != 0)); then
+        SPLIT_FAIL_INFO="$pieces"
+        return 1
+    fi
     while read -ra w; do
-        read_only "${w[@]}" || return 1
+        read_only "${w[@]}" || { REFUSED_PIECES+=("${w[*]}"); ok=0; }
     done <<<"$pieces"
+    [[ "$ok" == 1 ]]
 }
 
 chain_reads && exit 0
+
+publish_pr='gh[^;&|]*[[:space:]]pr[[:space:]]+(merge|create|new|edit|ready|close)([^[:alnum:]_.-]|$)'
+publish_stack='gh[^;&|]*[[:space:]]stack[[:space:]]+(merge|unstack)([^[:alnum:]_.-]|$)'
+publish_repo='gh[^;&|]*[[:space:]]repo[[:space:]]+(clone|create|delete|edit|fork|list|rename|set-default|sync|archive|unarchive)([^[:alnum:]_.-]|$)'
+publish_release='gh[^;&|]*[[:space:]]release[[:space:]]+create([^[:alnum:]_.-]|$)'
+publish_api='gh[^;&|]*[[:space:]]api[^;&|]*(graphql|(^|[[:space:]])-{1,2}(f|field|raw-field|input)([[:space:]=]|$)|-i?x[[:space:]]*(put|delete|patch|post)|--method[[:space:]=]*(put|delete|patch|post))'
+
+if ((${#REFUSED_PIECES[@]})); then
+    is_publish=0
+    for rp in "${REFUSED_PIECES[@]}"; do
+        if [[ "$rp" == "gh "* || "$rp" == "gh" ]]; then
+            is_publish=1
+            break
+        fi
+    done
+    if ((!is_publish)); then
+        reason_text=
+        for rp in "${REFUSED_PIECES[@]}"; do
+            reason_text="${reason_text:+$reason_text; }${rp:0:120}"
+        done
+        UNCONFIRMED_REASON="${reason_text:0:400}"
+    fi
+elif has -e "$publish_pr" -e "$publish_stack" -e "$publish_repo" -e "$publish_release" -e "$publish_api"; then
+    :
+else
+    UNCONFIRMED_REASON="it couldn't split the line at \"${SPLIT_FAIL_INFO}\""
+fi
 
 joined=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g') || ask
 case "$joined" in *[\;\&\`\{]* | *\$\(* | *'<('* | *'>('* | *$'\n'*) ask ;; esac

@@ -26,7 +26,7 @@ pass=0
 fail=0
 
 check() {
-    local want="$1" cmd="$2" repo="${3:-clean}" payload="${4:-}" out code got
+    local want="$1" cmd="$2" repo="${3:-clean}" payload="${4:-}" contains="${5:-}" out code got
     [[ -n "$payload" ]] || payload=$(CMD="$cmd" CWD="$FIXTURES/$repo" perl -MJSON::PP -e '
         print JSON::PP->new->utf8->encode({ cwd => $ENV{CWD}, tool_name => "Bash", tool_input => { command => $ENV{CMD} } });')
     out=$(printf '%s' "$payload" | "${RUNNER[@]}" 2>/dev/null)
@@ -35,20 +35,27 @@ check() {
         got="exit $code"
     elif [[ -z "$out" ]]; then
         got=pass
-    elif printf '%s' "$out" | perl -MJSON::PP -e '
-        my $d = JSON::PP->new->utf8->decode(join "", <STDIN>);
-        my $o = $d->{hookSpecificOutput};
-        exit !($o->{hookEventName} eq "PreToolUse" && $o->{permissionDecision} eq "ask" && $o->{permissionDecisionReason} =~ /merg.*main.*Joey/i);
-    '; then
-        got=ask
     else
-        got="bad output: $out"
+        got=$(CONTAINS="$contains" OUT="$out" perl -MJSON::PP -e '
+            my $d = eval { JSON::PP->new->utf8->decode($ENV{OUT}) };
+            my $o = $d && $d->{hookSpecificOutput};
+            my $r = ($o && $o->{permissionDecisionReason}) // "";
+            my $k = "";
+            if ($d && $o && ($o->{hookEventName} // "") eq "PreToolUse" && ($o->{permissionDecision} // "") eq "ask") {
+                $k = $r =~ /merg.*main.*Joey/i ? "ask" : $r =~ /could not confirm/i ? "unsure" : "";
+            }
+            if (length $k && length $ENV{CONTAINS}) {
+                my $c = $ENV{CONTAINS};
+                $k = "missing text" unless $r =~ /\Q$c\E/;
+            }
+            print length $k ? $k : "bad output: $ENV{OUT}";
+        ')
     fi
     if [[ "$got" == "$want" ]]; then
-        printf 'ok   %-4s %s%s%s\n' "$want" "$cmd" "${3:+  ($repo fixture)}" "$tag"
+        printf 'ok   %-6s %s%s%s\n' "$want" "$cmd" "${3:+  ($repo fixture)}" "$tag"
         pass=$((pass + 1))
     else
-        printf 'FAIL %-4s %s%s%s (got %s)\n' "$want" "$cmd" "${3:+  ($repo fixture)}" "$tag" "$got"
+        printf 'FAIL %-6s %s%s%s (got %s)\n' "$want" "$cmd" "${3:+  ($repo fixture)}" "$tag" "$got"
         fail=$((fail + 1))
     fi
 }
@@ -222,8 +229,8 @@ check ask $'gh pr edit 12 --title x\t--base main'
 check ask "gh pr edit 12 --ti\"tle\" x --ba''se main"
 check pass "gh pr edit 12 \"--title\" 'x' --body-file \"b.md\""
 check pass '  gh   pr  edit   12    --title   x  '
-check ask 'GH_HOST=evil.example gh pr ready 12'
-check ask 'GH_REPO=o/r gh pr edit 12 --title x'
+check unsure 'GH_HOST=evil.example gh pr ready 12'
+check unsure 'GH_REPO=o/r gh pr edit 12 --title x'
 check ask 'gh pr edit 12 --title x —base main'
 check ask $'gh pr ready 12 \\\n&& gh pr merge 12'
 check ask 'gh pr edit 12 --title x #--base main'
@@ -295,14 +302,14 @@ check ask 'git {push,} origin main'
 check ask 'GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.up GIT_CONFIG_VALUE_0=push git up origin main'
 check ask $'GIT_CONFIG_PARAMETERS="\'alias.up=push\'" git up origin main'
 check ask 'git push origin alias' symref
-check ask 'git commit -m "mention gh pr merge"'
-check ask 'bash -c "gh pr merge 12"'
-check ask 'echo 12 | xargs gh pr merge'
-check ask 'GH_REPO=o/r gh pr view 12'
+check unsure 'git commit -m "mention gh pr merge"'
+check unsure 'bash -c "gh pr merge 12"'
+check unsure 'echo 12 | xargs gh pr merge'
+check unsure 'GH_REPO=o/r gh pr view 12'
 check ask $'gh pr view 12\ngh pr merge 12'
-check ask 'gh pr view 12 | sh'
-check ask 'gh pr view 12 --json title | jq .title | sh'
-check ask 'gh pr view 12 | rg --pre sh x'
+check unsure 'gh pr view 12 | sh'
+check unsure 'gh pr view 12 --json title | jq .title | sh'
+check unsure 'gh pr view 12 | rg --pre sh x'
 check ask 'gh pr close 12'
 check ask 'gh repo delete o/r --yes'
 check ask 'gh secret set X'
@@ -373,7 +380,7 @@ check pass $'git commit -m "$(cat <<\'EOF\'\n[JSH-50] fix(hooks): x\n\nbody\nEOF
 check pass 'gh pr view 12 --json title | jq .title'
 check pass 'gh api repos/o/r/pulls/12 --jq .title'
 check pass 'gh api repos/doghead-digital-web/jshq --jq .allow_squash_merge'
-check ask "gh api repos/doghead-digital-web/jshq --jq '{squash: .allow_squash_merge}'"
+check unsure "gh api repos/doghead-digital-web/jshq --jq '{squash: .allow_squash_merge}'"
 check ask 'gh api -X PATCH repos/doghead-digital-web/jshq'
 check pass 'gh pr create --draft --title x --body-file b.md --base main'
 check pass 'gh pr checks 12'
@@ -409,97 +416,107 @@ check ask 'gh pr view 12; gh auth status -t'
 check ask 'gh pr view 12; gh api -X PATCH repos/o/r'
 check ask 'gh pr view 12; gh stack push'
 check pass 'gh pr view 12; echo done'
-check ask 'gh pr view 12; ./merge.sh'
-check ask 'gh pr view 12; git commit -m x'
-check ask 'gh pr view 12; git -C ../main status'
-check ask 'gh pr view 12; git branch feat'
-check ask 'gh pr view 12; git branch -D feat'
-check ask 'gh pr view 12; git branch -r -d origin/feat'
-check ask 'gh pr view 12; git log -1 --output=x.txt'
-check ask 'gh pr view 12; git fetch --upl=./x.sh .'
-check ask 'gh pr view 12; git fetch --upload-pack=./x.sh .'
-check ask 'gh pr view 12; git status | rg --pre sh x'
-check ask "gh pr view 12; rg --p''re=sh x"
-check ask 'gh pr view 12; rg --hostname-bin=./x.sh --hyperlink-format=default x'
-check ask 'gh pr view 12 | rg --hostname-bin=./x.sh --hyperlink-format=default x'
-check ask "gh pr view 12 | rg --p''re=sh x"
-check ask 'gh pr view 12; GH_REPO=o/r gh pr view 1'
+check unsure 'gh pr view 12; ./merge.sh'
+check unsure 'gh pr view 12; git commit -m x'
+check unsure 'gh pr view 12; git -C ../main status'
+check unsure 'gh pr view 12; git branch feat'
+check unsure 'gh pr view 12; git branch -D feat'
+check unsure 'gh pr view 12; git branch -r -d origin/feat'
+check unsure 'gh pr view 12; git log -1 --output=x.txt'
+check unsure 'gh pr view 12; git fetch --upl=./x.sh .'
+check unsure 'gh pr view 12; git fetch --upload-pack=./x.sh .'
+check unsure 'gh pr view 12; git status | rg --pre sh x'
+check unsure "gh pr view 12; rg --p''re=sh x"
+check unsure 'gh pr view 12; rg --hostname-bin=./x.sh --hyperlink-format=default x'
+check unsure 'gh pr view 12 | rg --hostname-bin=./x.sh --hyperlink-format=default x'
+check unsure "gh pr view 12 | rg --p''re=sh x"
+check unsure 'gh pr view 12; GH_REPO=o/r gh pr view 1'
 check ask 'gh pr view 12; gh "pr merge" 12'
 check ask 'gh pr view 12; echo $(gh pr merge 12)'
 check ask 'gh pr view 12; git log `gh pr merge 12`'
 check ask 'gh pr view 12; { gh pr merge 12; }'
 check ask 'gh pr view 12; (gh pr merge 12)'
-check ask 'gh pr view 12 > out.txt; git status'
-check ask 'gh pr view 12; git status 2>/dev/null'
-check ask 'gh pr view 12 < in.txt; git status'
+check unsure 'gh pr view 12 > out.txt; git status'
+check unsure 'gh pr view 12; git status 2>/dev/null'
+check unsure 'gh pr view 12 < in.txt; git status'
 check pass $'gh pr view 12\ngit status'
 check pass $'gh pr view 12\n\ngit status\n'
 check pass $'gh pr view 12 &&\ngit status'
 check pass $'gh pr view 12 |\njq .title'
-check ask $'gh pr view 12\r\ngit status'
-check ask $'gh pr view 12\n&& git status'
+check unsure $'gh pr view 12\r\ngit status'
+check unsure $'gh pr view 12\n&& git status'
 check ask $'date\ngh pr merge 12'
 check ask $'echo x\ngh pr merge 12'
 check ask $'cat f\ngh pr merge 12'
-check ask $'gh pr view 12; echo "a\nb"'
-check ask $'gh pr view 12; \\\ngit status'
+check unsure $'gh pr view 12; echo "a\nb"'
+check unsure $'gh pr view 12; \\\ngit status'
 check ask 'gh pr view 12 & gh pr merge 12'
-check ask 'gh pr view 12 |& cat'
-check ask 'gh pr view 12;'
-check ask 'gh pr view 12; ; git status'
-check ask 'gh pr view 12; rg x *'
-check ask "gh pr view 12; rg 'x\$' f"
-check ask "gh pr view 12; rg 'x"
-check ask "gh pr view 12; gh api repos/o/r --jq '{a: .b}'"
-check ask $'gh pr view 12; rg \'a\nb\' f'
-check ask 'gh pr view 12 # ; git status'
+check unsure 'gh pr view 12 |& cat'
+check unsure 'gh pr view 12;'
+check unsure 'gh pr view 12; ; git status'
+check unsure 'gh pr view 12; rg x *'
+check unsure "gh pr view 12; rg 'x\$' f"
+check unsure "gh pr view 12; rg 'x"
+check unsure "gh pr view 12; gh api repos/o/r --jq '{a: .b}'"
+check unsure $'gh pr view 12; rg \'a\nb\' f'
+check unsure 'gh pr view 12 # ; git status'
 
-check ask 'gh pr view 12; printf x > f'
-check ask 'gh pr view 12; printf -v x y'
-check ask 'gh pr view 12; echo x | sh'
-check ask 'gh pr view 12; base64 -o x'
-check ask 'gh pr view 12; base64 --output x'
-check ask 'gh pr view 12; base64 -i x'
-check ask 'gh pr view 12; base64 --input x'
-check ask 'gh pr view 12; base64 f'
-check ask 'gh pr view 12; base64'
+check unsure 'gh pr view 12; printf x > f'
+check unsure 'gh pr view 12; printf -v x y'
+check unsure 'gh pr view 12; echo x | sh'
+check unsure 'gh pr view 12; base64 -o x'
+check unsure 'gh pr view 12; base64 --output x'
+check unsure 'gh pr view 12; base64 -i x'
+check unsure 'gh pr view 12; base64 --input x'
+check unsure 'gh pr view 12; base64 f'
+check unsure 'gh pr view 12; base64'
 check pass 'gh pr view 12; base64 -d'
-check ask 'gh pr view 12; sort -o x'
-check ask 'gh pr view 12; sort -ox'
-check ask 'gh pr view 12; sort -ro x'
-check ask 'gh pr view 12; sort --output x'
-check ask 'gh pr view 12; sort --output=x'
-check ask 'gh pr view 12; sort --out=x'
-check ask 'gh pr view 12; sort -T d'
-check ask 'gh pr view 12; sort --temporary-directory=d'
-check ask 'gh pr view 12; sort --compress-program=sh'
-check ask 'gh pr view 12; sort --compress=sh'
+check unsure 'gh pr view 12; sort -o x'
+check unsure 'gh pr view 12; sort -ox'
+check unsure 'gh pr view 12; sort -ro x'
+check unsure 'gh pr view 12; sort --output x'
+check unsure 'gh pr view 12; sort --output=x'
+check unsure 'gh pr view 12; sort --out=x'
+check unsure 'gh pr view 12; sort -T d'
+check unsure 'gh pr view 12; sort --temporary-directory=d'
+check unsure 'gh pr view 12; sort --compress-program=sh'
+check unsure 'gh pr view 12; sort --compress=sh'
 check pass 'gh pr view 12; sort'
 check pass 'gh pr view 12; sort -rn'
 check pass "gh pr view 12; sort -k2,2 -t,"
 check pass 'gh pr view 12; sort -k 2 file'
 check pass 'gh pr view 12; sort --unique'
-check ask 'gh pr view 12; uniq in out'
-check ask 'gh pr view 12; uniq in'
-check ask 'gh pr view 12; uniq -c in out'
-check ask 'gh pr view 12; uniq -x'
-check ask 'gh pr view 12; uniq -f 1?'
+check unsure 'gh pr view 12; uniq in out'
+check unsure 'gh pr view 12; uniq in'
+check unsure 'gh pr view 12; uniq -c in out'
+check unsure 'gh pr view 12; uniq -x'
+check unsure 'gh pr view 12; uniq -f 1?'
 check pass 'gh pr view 12; uniq'
 check pass 'gh pr view 12; uniq -c'
 check pass 'gh pr view 12; uniq -f 1 -c'
 check pass "gh pr view 12; cut -d, -f1"
 check pass 'gh pr view 12; tr -d x'
-check ask 'gh pr view 12; printf -vPATH x'
-check ask "gh pr view 12; printf '-v' PATH x"
-check ask 'gh pr view 12; printf -- x'
+check unsure 'gh pr view 12; printf -vPATH x'
+check unsure "gh pr view 12; printf '-v' PATH x"
+check unsure 'gh pr view 12; printf -- x'
 check pass "gh pr view 12; printf '%s' x"
 check pass 'git status; gh api repos/o/r/contents/a.php?ref=v1 --jq .content'
-check ask 'gh pr view 12; git log ?-output=x'
-check ask 'gh pr view 12; gh api ?XPUT repos/o/r'
-check ask 'gh pr view 12; git log -?'
-check ask 'gh pr view 12; uniq a?'
-check ask "gh pr view 12; echo '-'?x"
+check unsure 'gh pr view 12; git log ?-output=x'
+check unsure 'gh pr view 12; gh api ?XPUT repos/o/r'
+check unsure 'gh pr view 12; git log -?'
+check unsure 'gh pr view 12; uniq a?'
+check unsure "gh pr view 12; echo '-'?x"
 check pass $'echo "===== a.php ====="\ngh api repos/laravel/ai/contents/src/a.php?ref=v1.3.0 --jq \'.content\' | base64 -d\necho "===== b.php ====="\ngh api repos/laravel/ai/contents/src/b.php?ref=v1.3.0 --jq \'.content\' | base64 -d'
+
+check unsure 'gh pr view 12; echo $(id)' clean '' '$'
+check unsure 'gh pr view 12; ./x.sh' clean '' './x.sh'
+check unsure 'gh pr view 12; sort -o x' clean '' 'sort -o x'
+check unsure "gh pr view 12; ./x.sh 'a\"b'" clean '' 'x.sh'
+check ask 'gh pr view 1; sed 1q x; gh workflow run deploy'
+check unsure 'gh pr view 1; sed 1q x; ./y.sh' clean '' 'sed 1q x'
+check unsure 'gh pr view 1; sed 1q x; ./y.sh' clean '' './y.sh'
+check unsure $'gh pr view 12; ./x.sh \'\x1b\xc3\xb1\'' clean '' '\x1b'
+check unsure $'gh pr view 12; ./x.sh \'\x1b\xc3\xb1\'' clean '' '\xc3'
 
 [[ -z "$SETTINGS" ]] || check_store
 
