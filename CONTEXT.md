@@ -504,17 +504,19 @@ quotes: it makes the next character literal, whitespace included (an
 escaped space joins one word, the same as quoted whitespace does), and
 this is tried before pairing quotes, so a backslash-escaped quote never
 gets mistaken for an opening or closing delimiter. Getting this wrong
-let `-H x-a:b\' -X PUT -H \'x-c:d` read as one `-H` value hiding `-X
-PUT`, since the two escaped quotes paired as if they bounded a real
-quoted span; this was true on every reading of the guard, predates the
-two readings themselves, and broke `gh api`'s non-GET refusal, the
-`$'` and `$"` asks below and the grep allow-list's pipe-filter path all
-at once, since all three read from this one reader. Inside single
-quotes nothing escapes, matching bash exactly; inside double quotes
-the existing escape handling is unchanged. The same reading now also
-asks on an unquoted `$'` or `$"`, ANSI-C and locale quoting forms
-neither reading otherwise models, since without that `gh pr view 1
-$"x"` reached the read-prefix match below with no prompt at all.
+let a backslash-escaped quote outside real quotes pair with a second
+one as if the two bounded a real quoted span, hiding whatever sat
+between them from every check that reads words rather than raw text;
+this was true on every reading of the guard, predates the two readings
+themselves, and broke `gh api`'s non-GET refusal, the `$'` and `$"`
+asks below and the grep allow-list's pipe-filter path all at once,
+since all three read from this one reader. The rows that prove it are
+in `ask-before-publishing.test.sh`, grouped with the commit that fixed
+it. Inside single quotes nothing escapes, matching bash exactly; inside
+double quotes the existing escape handling is unchanged. The same
+reading now also asks on an unquoted `$'` or `$"`, ANSI-C and locale
+quoting forms neither reading otherwise models, which previously
+reached the read-prefix match below with no prompt at all.
 
 A push is `push` in git's subcommand slot, after any global options such as
 `-C <dir>`, `-c <k=v>` or `--git-dir <dir>`, so `git stash push` and a
@@ -544,11 +546,11 @@ and subcommand straight after `gh`:
 - `gh api <endpoint>` whose only flags are `--paginate`, `--slurp`,
   `-i`/`--include`, `--silent`, `--jq`/`-q <expr>`, `-H`/`--header <value>`
   (not a method override, and not a value containing `?`, `*` or `[`: the
-  hook reads command text only and never expands a glob, so a planted file
-  that `-H X-HTTP-Method-Ov?rride:?PUT` would expand against at the shell
-  could otherwise hide an override the text-only check never sees),
-  `--cache <dur>` and `-X`/`--method GET`, each a separate token; `graphql`
-  asks
+  hook reads command text only and never expands a glob, so a header value
+  a planted file could make expand at the shell could otherwise hide an
+  override the text-only check never sees; the proving row is in
+  `ask-before-publishing.test.sh`), `--cache <dur>` and `-X`/`--method GET`,
+  each a separate token; `graphql` asks
 - `gh pr create` starting exactly `--draft` or `-d`, with that flag outside
   quoted text, no `--draft=` or `-d=` anywhere (quoted or not, so unbalanced
   quotes cannot hide one), and no pipe. Draft PR bodies therefore go through
