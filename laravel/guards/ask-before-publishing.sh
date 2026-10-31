@@ -27,9 +27,10 @@ ask() {
 cmd=$(field command) || ask
 cwd=$(field cwd) || ask
 
-flat=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g; s/[\r\n]/ /g') || ask
+flat=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g; s/\n/ /g') || ask
 norm=$(printf '%s' "$flat" | perl -0777 -pe 's/["\x27\\]//g; $_ = lc') || ask
 words=$(printf '%s' "$flat" | perl -0777 -pe 's{\x27([^\x27]*)\x27|"((?:[^"\\]|\\.)*)"}{my $s = $1 // $2; $s =~ s/\s/\x1f/g; length $s ? $s : "\x1f"}ge; s/["\x27\\]//g; $_ = lc') || ask
+wordscase=$(printf '%s' "$flat" | perl -0777 -pe 's{\x27([^\x27]*)\x27|"((?:[^"\\]|\\.)*)"}{my $s = $1 // $2; $s =~ s/\s/\x1f/g; length $s ? $s : "\x1f"}ge; s/["\x27\\]//g') || ask
 unquoted=$(printf '%s' "$cmd" | sed -E "s/\"[^\"]*\"//g; s/'[^']*'//g") || ask
 
 has() { printf '%s' "$norm" | grep -Eq "$@" || printf '%s' "$words" | grep -Eq "$@"; }
@@ -129,6 +130,32 @@ pr_edit_ready() {
     [[ "${w[2]}" == ready || "$m" -gt 0 ]]
 }
 
+grep_ok() {
+    local a=("$@") i v
+    for ((i = 1; i < ${#a[@]}; i++)); do
+        v="${a[i]}"
+        if [[ "$v" =~ ^-[cinvEFwxlLoqshHrR]+$ ]]; then
+            :
+        elif [[ "$v" == -e ]]; then
+            i=$((i + 1))
+            [[ -n "${a[i]-}" ]] || return 1
+        elif [[ "$v" == -A || "$v" == -B || "$v" == -C || "$v" == -m ]]; then
+            i=$((i + 1))
+            [[ "${a[i]-}" =~ ^[0-9]+$ ]] || return 1
+        elif [[ "$v" =~ ^-e.+$ ]]; then
+            :
+        elif [[ "$v" =~ ^-[ABCm][0-9]+$ ]]; then
+            :
+        elif [[ "$v" == --count || "$v" == --ignore-case || "$v" == --line-number || "$v" == --invert-match || "$v" == --extended-regexp || "$v" == --fixed-strings || "$v" == --word-regexp || "$v" == --line-regexp || "$v" == --files-with-matches || "$v" == --files-without-match || "$v" == --only-matching || "$v" == --quiet || "$v" == --no-messages || "$v" == --recursive || "$v" == --regexp=* ]]; then
+            :
+        elif [[ "$v" == --max-count=* || "$v" == --after-context=* || "$v" == --before-context=* || "$v" == --context=* ]]; then
+            [[ "${v#*=}" =~ ^[0-9]+$ ]] || return 1
+        elif [[ "$v" == -* ]]; then
+            return 1
+        fi
+    done
+}
+
 read_only() {
     local g="$*" f a i v n
     case "$1" in
@@ -161,7 +188,8 @@ read_only() {
             esac
             ;;
         rg) [[ ! "$g" =~ $rgexec ]] ;;
-        grep | jq | head | tail | wc | cat | ls | date | echo | cut | tr) ;;
+        grep) grep_ok "$@" ;;
+        jq | head | tail | wc | cat | ls | date | echo | cut | tr) ;;
         printf) [[ "${2-}" != -* ]] ;;
         base64)
             n=0
@@ -309,6 +337,11 @@ if [[ "$invocation" != "$words" ]]; then
     filter="${words#*|}"
     [[ "$filter" =~ ^[[:space:]]*(jq|head|tail|rg|grep|wc)([[:space:]]|$) ]] || ask
     [[ "$filter" =~ $rgexec || "${norm#*|}" =~ $rgexec ]] && ask
+    if [[ "$filter" =~ ^[[:space:]]*grep([[:space:]]|$) ]]; then
+        filtercase="${wordscase:$((${#invocation} + 1))}"
+        read -ra fw <<<"$filtercase"
+        grep_ok "${fw[@]}" || ask
+    fi
 fi
 read -ra w <<<"$invocation"
 g="${w[*]}"

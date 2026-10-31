@@ -571,9 +571,28 @@ when every piece is one of these reads:
   `-v`/`--verbose`, `-t`/`--tags`, `--no-tags` and `--dry-run`. This is an
   allow-list because git takes any unambiguous abbreviation of a long
   option, and `--upl=<cmd>` is `--upload-pack`, which runs `<cmd>`
-- `rg` (without `--pre` or `--hostname-bin`), `grep`, `jq`, `head`, `tail`,
-  `wc`, `cat`, `ls`, `date`, `echo`, `cut` and `tr`, each with any words:
-  none of them writes a file
+- `rg` (without `--pre` or `--hostname-bin`), `jq`, `head`, `tail`, `wc`,
+  `cat`, `ls`, `date`, `echo`, `cut` and `tr`, each with any words: none of
+  them writes a file
+- `grep`, an allow-list rather than any-words, because in agent shells
+  `grep` is Claude Code's ugrep wrapper, and ugrep's `--filter`, `--pager`,
+  `--view`, `--config` and `--save-config` each run a program. A `grep`
+  piece passes only with a short-option cluster from `c i n v E F w x l L o
+  q s h H r R`, `-e`/`-A`/`-B`/`-C`/`-m` with a value (separate or joined;
+  the value of `-A`, `-B`, `-C` and `-m` must be only digits on the
+  assembled word, so `-A 1?` against a glob asks on its literal text), one
+  of a fixed set of long options (`--count`, `--ignore-case`,
+  `--line-number`, `--extended-regexp`, `--regexp=…`, and so on, each
+  spelled in full since ugrep also takes unambiguous abbreviations,
+  `--fil` included), or a bare operand. This allow-list applies in both
+  places `grep` was already let through: `read_only` here, and the single
+  pipe filter below, which a line reaches when the split itself fails (a
+  backslash in an operand, say); the filter is validated from a
+  case-preserved copy of the split words, because the rest of the single
+  command path folds everything to lowercase for its own gh/git matching,
+  which would otherwise turn a refused `-Q` into an allowed `-q` before the
+  check ever saw it. A planted `.ugrep` config file is a known gap, the
+  same earlier-write class as `RIPGREP_CONFIG_PATH`.
 - `printf`, unless its first argument starts with `-` (its only writing
   flag, `-v`, assigns a shell variable; the check is on the whole assembled
   word, so `-v`, `-vPATH`, a quoted `'-v'` and `--` all ask)
@@ -610,6 +629,24 @@ newline right after a separator, with nothing between them (`gh pr view
 piece from `;;` does. Any `\r`, CRLF included, still fails the split, since
 bash keeps a bare CR as an ordinary word character rather than a separator,
 and a newline inside a quoted string still fails it too.
+
+A lone `\r` never starts a second command, in bash or zsh: neither shell
+splits a word on a bare CR, so `gh pr view 12` CR `git status` runs as one
+`gh pr view` call with a garbled argument, never two commands. The split
+still refuses it (a `\r` anywhere fails it), and the single-command path
+below then reads the whole garbled line as a `gh pr view` read, which is
+the correct outcome for what is, to the shell, one command; there is no
+row for this, and none is owed. `$reads` matching on a command's prefix is
+by design, not a gap this split is meant to close: `gh pr view` with any
+trailing arguments is a read, and the checks above already refuse a
+`;`/`&&`/`||`/`|` separator before it can hide a second command; closing
+the prefix match would also need to anchor `$token`, `$draft`, `$stack`
+and `pr_edit_ready`, each of which depends on today's shape allowing
+trailing flags and operands. `$flat` turns a bare `\n` into a space for the
+single-command path's own word-splitting (`$norm`, `$words`) but leaves a
+bare `\r` alone, matching bash's own treatment of the two characters; no
+row in the suite needs `\r` neutralised there too, since the prefix match
+above already covers the one shape a stray `\r` can produce.
 
 An unquoted `?` is a word character, alongside `=`, so a `gh api` endpoint
 with a ref query string (`repos/o/r/contents/a.php?ref=v1.3.0`) counts as

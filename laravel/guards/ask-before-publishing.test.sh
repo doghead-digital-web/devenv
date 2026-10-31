@@ -518,6 +518,27 @@ check unsure 'gh pr view 1; sed 1q x; ./y.sh' clean '' './y.sh'
 check unsure $'gh pr view 12; ./x.sh \'\x1b\xc3\xb1\'' clean '' '\x1b'
 check unsure $'gh pr view 12; ./x.sh \'\x1b\xc3\xb1\'' clean '' '\xc3'
 
+check unsure "gh pr view 1; grep --filter='txt:x' a.txt"
+check unsure "gh pr view 1 --json title | grep --filter='txt:x' a.txt"
+check unsure 'gh pr view 1; grep --fil=x a'
+check unsure 'gh pr view 1 --json title | grep --fil=x a'
+check unsure 'gh pr view 1; grep --pager=x a'
+check unsure 'gh pr view 1 --json title | grep --pager=x a'
+check unsure 'gh pr view 1; grep --view x'
+check unsure 'gh pr view 1 --json title | grep --view x'
+check unsure 'gh pr view 1; grep --config=x a'
+check unsure 'gh pr view 1 --json title | grep --config=x a'
+check unsure 'gh pr view 1; grep --save-config'
+check unsure 'gh pr view 1 --json title | grep --save-config'
+check unsure 'gh pr view 1; grep -Q a'
+check unsure 'gh pr view 1 --json title | grep -Q a'
+check unsure 'gh pr view 1; grep -A 1? a'
+check unsure 'gh pr view 1 --json title | grep -A 1? a'
+check unsure $'gh pr view 1 --json title | grep --filter=\'txt:x\' a\\b'
+check pass $'gh pr view 1 --json title | grep -c a\\b'
+check pass "gh pr view 1; grep -rn 'a|b' src"
+check pass 'gh pr view 1 | grep -E -e x -A2'
+
 [[ -z "$SETTINGS" ]] || check_store
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
