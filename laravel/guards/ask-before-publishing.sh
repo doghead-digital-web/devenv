@@ -12,7 +12,13 @@ field() {
 }
 
 ask() {
+    [[ -n "${bare-}" ]] && chain_reads "$bare" && deny
     printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Merging and pushing to main need Joey. Feature branches, draft PRs, PR titles and bodies, and readying a PR publish freely, but merging, retargeting a PR, pushing to main, or force-pushing outside gh stack waits for approval from Joey."}}'
+    exit 0
+}
+
+deny() {
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refused: run every gh command alone, in its own Bash call, with no 2>&1, pipe, redirect or second command. Rerun it bare and read the whole output."}}'
     exit 0
 }
 
@@ -160,7 +166,7 @@ read_only() {
 
 chain_reads() {
     local pieces w
-    pieces=$(CMD="$cmd" perl -e '
+    pieces=$(CMD="$1" perl -e '
         my $s = $ENV{CMD};
         exit 1 if $s =~ /[`\$\{\}<>\\\n\r]/;
         my @pieces = ([]);
@@ -187,7 +193,9 @@ chain_reads() {
     done <<<"$pieces"
 }
 
-chain_reads && exit 0
+chain_reads "$cmd" && exit 0
+bare=$(printf '%s' "$cmd" | perl -pe 's/[ \t]*[0-9]*>&[0-9]+//g; s/[ \t]*[0-9]*>[ \t]*\/dev\/null//g') || ask
+[[ "$bare" == "$cmd" ]] && bare=
 
 joined=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g') || ask
 case "$joined" in *[\;\&\`\{]* | *\$\(* | *'<('* | *'>('* | *$'\n'*) ask ;; esac

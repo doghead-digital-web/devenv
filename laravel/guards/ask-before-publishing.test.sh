@@ -41,6 +41,12 @@ check() {
         exit !($o->{hookEventName} eq "PreToolUse" && $o->{permissionDecision} eq "ask" && $o->{permissionDecisionReason} =~ /merg.*main.*Joey/i);
     '; then
         got=ask
+    elif printf '%s' "$out" | perl -MJSON::PP -e '
+        my $d = JSON::PP->new->utf8->decode(join "", <STDIN>);
+        my $o = $d->{hookSpecificOutput};
+        exit !($o->{hookEventName} eq "PreToolUse" && $o->{permissionDecision} eq "deny" && $o->{permissionDecisionReason} =~ /run every gh command alone/i);
+    '; then
+        got=deny
     else
         got="bad output: $out"
     fi
@@ -401,6 +407,17 @@ check pass 'cat README.md; ls -la; date; tail -n 5 log.txt; gh run list'
 check pass 'git show HEAD --stat; gh issue view 3 | grep -c x'
 check pass 'GH pr view 12; git status'
 check pass 'gh api -X GET repos/o/r/pulls/12; git log -1 --format="%h %s"'
+check pass 'gh stack view --json | head -50'
+check deny 'gh stack view --json 2>&1 | head -50'
+check deny 'git status --short && git branch --show-current && gh stack view --json 2>&1 | head -50'
+check deny 'gh pr view 12 2>&1'
+check deny 'gh pr view 12 >/dev/null 2>&1; git status'
+check pass 'gh pr view 12 2>/dev/null'
+check pass 'gh stack view 2> /dev/null'
+check pass 'gh stack view > out.txt'
+check ask 'gh pr view 12 2>&1; gh pr merge 12'
+check ask 'gh pr view 12 2>&1 > out.txt; git status'
+check ask 'gh stack view 2>&1 | sh'
 check ask 'gh pr view 12; gh pr merge 12'
 check ask 'gh pr view 12 && git push origin main'
 check ask 'gh pr view 12 && gh pr ready 12'
@@ -430,7 +447,7 @@ check ask 'gh pr view 12; git log `gh pr merge 12`'
 check ask 'gh pr view 12; { gh pr merge 12; }'
 check ask 'gh pr view 12; (gh pr merge 12)'
 check ask 'gh pr view 12 > out.txt; git status'
-check ask 'gh pr view 12; git status 2>/dev/null'
+check deny 'gh pr view 12; git status 2>/dev/null'
 check ask 'gh pr view 12 < in.txt; git status'
 check ask $'gh pr view 12\ngit status'
 check ask $'gh pr view 12; \\\ngit status'

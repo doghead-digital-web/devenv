@@ -104,6 +104,28 @@ test('pint never rewrites an installed dependency, and still formats app code', 
     ['tests/Feature/vendor/ExampleTest.php', false],
 ]);
 
+test('the team-scratch id hook runs at pre-commit on tests and CONTEXT.md files only', function (): void {
+    $result = Process::path(module_path('tests/fixtures/app'))
+        ->env(['CI' => false])
+        ->timeout(600)
+        ->run(['devenv', 'eval', 'git-hooks.hooks.scratch-ids.entry', 'git-hooks.hooks.scratch-ids.files', 'git-hooks.hooks.scratch-ids.pass_filenames', 'git-hooks.hooks.scratch-ids.stages']);
+
+    Assert::assertTrue($result->successful(), $result->errorOutput());
+
+    /** @var array{'git-hooks.hooks.scratch-ids.entry': string, 'git-hooks.hooks.scratch-ids.files': string, 'git-hooks.hooks.scratch-ids.pass_filenames': bool, 'git-hooks.hooks.scratch-ids.stages': list<string>} $evaluated */
+    $evaluated = json_decode($result->output(), true);
+    $files = '#'.$evaluated['git-hooks.hooks.scratch-ids.files'].'#';
+
+    expect($evaluated['git-hooks.hooks.scratch-ids.entry'])->toMatch('#^/nix/store/[0-9a-z]{32}-scratch-ids$#')
+        ->and($evaluated['git-hooks.hooks.scratch-ids.pass_filenames'])->toBeFalse()
+        ->and($evaluated['git-hooks.hooks.scratch-ids.stages'])->toBe(['pre-commit'])
+        ->and(preg_match($files, 'tests/Feature/JobsTest.php'))->toBe(1)
+        ->and(preg_match($files, 'app/Domains/Jobs/CONTEXT.md'))->toBe(1)
+        ->and(preg_match($files, 'CONTEXT.md'))->toBe(1)
+        ->and(preg_match($files, 'app/Models/Job.php'))->toBe(0)
+        ->and(preg_match($files, 'app/tests/Job.php'))->toBe(0);
+});
+
 test('the publishing hook runs a /nix/store copy of ask-before-publishing.sh', function (): void {
     expect(fixtureAppHooks()['ask-before-publishing']['command'])->toMatch('#^/nix/store/[0-9a-z]{32}-ask-before-publishing$#');
 });
