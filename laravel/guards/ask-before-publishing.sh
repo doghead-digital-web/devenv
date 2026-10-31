@@ -134,25 +134,29 @@ grep_ok() {
     local a=("$@") i v
     for ((i = 1; i < ${#a[@]}; i++)); do
         v="${a[i]}"
-        if [[ "$v" =~ ^-[cinvEFwxlLoqshHrR]+$ ]]; then
-            :
-        elif [[ "$v" == -e ]]; then
-            i=$((i + 1))
-            [[ -n "${a[i]-}" ]] || return 1
-        elif [[ "$v" == -A || "$v" == -B || "$v" == -C || "$v" == -m ]]; then
-            i=$((i + 1))
-            [[ "${a[i]-}" =~ ^[0-9]+$ ]] || return 1
-        elif [[ "$v" =~ ^-e.+$ ]]; then
-            :
-        elif [[ "$v" =~ ^-[ABCm][0-9]+$ ]]; then
-            :
-        elif [[ "$v" == --count || "$v" == --ignore-case || "$v" == --line-number || "$v" == --invert-match || "$v" == --extended-regexp || "$v" == --fixed-strings || "$v" == --word-regexp || "$v" == --line-regexp || "$v" == --files-with-matches || "$v" == --files-without-match || "$v" == --only-matching || "$v" == --quiet || "$v" == --no-messages || "$v" == --recursive || "$v" == --regexp=* ]]; then
-            :
-        elif [[ "$v" == --max-count=* || "$v" == --after-context=* || "$v" == --before-context=* || "$v" == --context=* ]]; then
-            [[ "${v#*=}" =~ ^[0-9]+$ ]] || return 1
-        elif [[ "$v" == -* ]]; then
-            return 1
-        fi
+        case "$v" in
+            --count | --ignore-case | --line-number | --invert-match | --extended-regexp | --fixed-strings | --word-regexp | --line-regexp | --files-with-matches | --files-without-match | --only-matching | --quiet | --no-messages | --recursive | --regexp=*) ;;
+            --max-count=* | --after-context=* | --before-context=* | --context=*)
+                [[ "${v#*=}" =~ ^[0-9]+$ ]] || return 1
+                ;;
+            -e)
+                i=$((i + 1))
+                [[ -n "${a[i]-}" ]] || return 1
+                ;;
+            -A | -B | -C | -m)
+                i=$((i + 1))
+                [[ "${a[i]-}" =~ ^[0-9]+$ ]] || return 1
+                ;;
+            -e*) ;;
+            -[ABCm][0-9]*)
+                [[ "$v" =~ ^-[ABCm][0-9]+$ ]] || return 1
+                ;;
+            -[cinvEFwxlLoqshHrR]*)
+                [[ "$v" =~ ^-[cinvEFwxlLoqshHrR]+$ ]] || return 1
+                ;;
+            -*) return 1 ;;
+            *) ;;
+        esac
     done
 }
 
