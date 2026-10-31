@@ -82,6 +82,7 @@ api_get() {
             -h | --header)
                 i=$((i + 1))
                 [[ "${w[i]-}" == -* ]] && return 1
+                case "${w[i]-}" in *[?*[]*) return 1 ;; esac
                 printf '%s' "${w[i]-}" | grep -qi override && return 1
                 ;;
             -x | --method)

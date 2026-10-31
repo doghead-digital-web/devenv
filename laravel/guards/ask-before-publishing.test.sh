@@ -551,6 +551,9 @@ check unsure "gh pr view 1 --json title | grep \\' --filter=x \\' a"
 check ask "gh api repos/o/r -H \$'a' -X PUT -H 'b'"
 check unsure 'gh pr view 1 $"x"'
 
+check ask 'git status; gh api repos/o/r -H X-HTTP-Method-Ov?rride:?PUT'
+check ask 'gh api repos/o/r -H X-HTTP-Method-Ov?rride:?PUT'
+
 [[ -z "$SETTINGS" ]] || check_store
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
