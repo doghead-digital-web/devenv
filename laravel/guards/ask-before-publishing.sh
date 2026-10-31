@@ -122,7 +122,7 @@ pr_edit_ready() {
 }
 
 read_only() {
-    local g="$*" f
+    local g="$*" f a i v n
     case "$1" in
         gh)
             [[ "$g" =~ $token ]] && return 1
@@ -153,7 +153,54 @@ read_only() {
             esac
             ;;
         rg) [[ ! "$g" =~ $rgexec ]] ;;
-        grep | jq | head | tail | wc | cat | ls | date) ;;
+        grep | jq | head | tail | wc | cat | ls | date | echo | cut | tr) ;;
+        printf) [[ "${2-}" != -* ]] ;;
+        base64)
+            n=0
+            for f in "${@:2}"; do
+                case "$f" in
+                    -d | -D | --decode) n=$((n + 1)) ;;
+                    *) return 1 ;;
+                esac
+            done
+            [[ "$n" -gt 0 ]]
+            ;;
+        sort)
+            a=("$@")
+            for ((i = 1; i < ${#a[@]}; i++)); do
+                v="${a[i]}"
+                if [[ "$v" =~ ^-[bdfghiMnrRsuVz]+$ ]]; then
+                    :
+                elif [[ "$v" == -k || "$v" == -t ]]; then
+                    i=$((i + 1))
+                    [[ -n "${a[i]-}" ]] || return 1
+                elif [[ "$v" =~ ^-k.+$ || "$v" =~ ^-t.$ ]]; then
+                    :
+                elif [[ "$v" == --reverse || "$v" == --numeric-sort || "$v" == --general-numeric-sort || "$v" == --human-numeric-sort || "$v" == --version-sort || "$v" == --month-sort || "$v" == --unique || "$v" == --ignore-case || "$v" == --ignore-leading-blanks || "$v" == --dictionary-order || "$v" == --stable || "$v" == --zero-terminated || "$v" == --key=* || "$v" == --field-separator=* ]]; then
+                    :
+                elif [[ "$v" == -* ]]; then
+                    return 1
+                fi
+            done
+            ;;
+        uniq)
+            a=("$@")
+            n=0
+            for ((i = 1; i < ${#a[@]}; i++)); do
+                v="${a[i]}"
+                case "$v" in
+                    -c | -d | -u | -i | -D | --count | --repeated | --unique | --ignore-case) ;;
+                    -f | -s)
+                        i=$((i + 1))
+                        [[ "${a[i]-}" =~ ^[0-9]+$ ]] || return 1
+                        ;;
+                    -f* | -s*) [[ "${v:2}" =~ ^[0-9]+$ ]] || return 1 ;;
+                    -*) return 1 ;;
+                    *) n=$((n + 1)) ;;
+                esac
+            done
+            [[ "$n" == 0 ]]
+            ;;
         *) return 1 ;;
     esac
 }
