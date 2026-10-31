@@ -548,6 +548,9 @@ check ask "gh pr ready 12 x\\' --undo \\'y"
 check unsure "gh pr view 1 | grep \\' --filter=txt:./x.sh \\' a.txt"
 check unsure "gh pr view 1 --json title | grep \\' --filter=x \\' a"
 
+check ask "gh api repos/o/r -H \$'a' -X PUT -H 'b'"
+check unsure 'gh pr view 1 $"x"'
+
 [[ -z "$SETTINGS" ]] || check_store
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

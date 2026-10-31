@@ -330,7 +330,7 @@ else
 fi
 
 joined=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g') || ask
-case "$joined" in *[\;\&\`\{]* | *\$\(* | *'<('* | *'>('* | *$'\n'*) ask ;; esac
+case "$joined" in *[\;\&\`\{]* | *\$\(* | *'<('* | *'>('* | *$'\n'* | *\$\'* | *\$\"*) ask ;; esac
 case "$norm" in *'|'*'|'*) ask ;; esac
 invocation="${words%%|*}"
 if [[ "$invocation" != "$words" ]]; then
