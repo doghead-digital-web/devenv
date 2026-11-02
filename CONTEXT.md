@@ -499,6 +499,25 @@ in the subcommand slot, and `--jq ''` would swallow the `-XPUT` after it.
 The subcommand slot and gh's words come from the second reading, and a
 check that matches either reading asks.
 
+The second reading follows bash's own rule for a backslash outside
+quotes: it makes the next character literal, whitespace included (an
+escaped space joins one word, the same as quoted whitespace does), and
+this is tried before pairing quotes, so a backslash-escaped quote never
+gets mistaken for an opening or closing delimiter. Getting this wrong
+let a backslash-escaped quote outside real quotes pair with a second
+one as if the two bounded a real quoted span, hiding whatever sat
+between them from every check that reads words rather than raw text;
+this was true on every reading of the guard, predates the two readings
+themselves, and broke `gh api`'s non-GET refusal, the `$'` and `$"`
+asks below and the grep allow-list's pipe-filter path all at once,
+since all three read from this one reader. The rows that prove it are
+in `ask-before-publishing.test.sh`, grouped with the commit that fixed
+it. Inside single quotes nothing escapes, matching bash exactly; inside
+double quotes the existing escape handling is unchanged. The same
+reading now also asks on an unquoted `$'` or `$"`, ANSI-C and locale
+quoting forms neither reading otherwise models, which previously
+reached the read-prefix match below with no prompt at all.
+
 A push is `push` in git's subcommand slot, after any global options such as
 `-C <dir>`, `-c <k=v>` or `--git-dir <dir>`, so `git stash push` and a
 commit message that says push are not pushes. Any line that runs `git push`
@@ -526,8 +545,12 @@ and subcommand straight after `gh`:
   `gh release view|list`
 - `gh api <endpoint>` whose only flags are `--paginate`, `--slurp`,
   `-i`/`--include`, `--silent`, `--jq`/`-q <expr>`, `-H`/`--header <value>`
-  (not a method override), `--cache <dur>` and `-X`/`--method GET`, each a
-  separate token; `graphql` asks
+  (not a method override, and not a value containing `?`, `*` or `[`: the
+  hook reads command text only and never expands a glob, so a header value
+  a planted file could make expand at the shell could otherwise hide an
+  override the text-only check never sees; the proving row is in
+  `ask-before-publishing.test.sh`), `--cache <dur>` and `-X`/`--method GET`,
+  each a separate token; `graphql` asks
 - `gh pr create` starting exactly `--draft` or `-d`, with that flag outside
   quoted text, no `--draft=` or `-d=` anywhere (quoted or not, so unbalanced
   quotes cannot hide one), and no pipe. Draft PR bodies therefore go through
@@ -556,8 +579,8 @@ time.
 Agents check state with one line of several reads, such as `gh repo view
 --json visibility; git branch -r | rg feat-x`, and asking about each one
 stalled panes with nobody at the laptop. So before the rules above, the guard
-splits the line on `;`, `&&`, `||` and `|` and passes it when every piece is
-one of these reads:
+splits the line on `;`, `&&`, `||`, `|` and a bare newline, and passes it
+when every piece is one of these reads:
 
 - a gh read from the list above, `gh stack view`, or a `gh api` GET of the
   shape above
@@ -571,23 +594,116 @@ one of these reads:
   `-v`/`--verbose`, `-t`/`--tags`, `--no-tags` and `--dry-run`. This is an
   allow-list because git takes any unambiguous abbreviation of a long
   option, and `--upl=<cmd>` is `--upload-pack`, which runs `<cmd>`
-- `rg` (without `--pre` or `--hostname-bin`), `grep`, `jq`, `head`, `tail`,
-  `wc`, `cat`, `ls` and `date`
+- `rg` (without `--pre` or `--hostname-bin`), `jq`, `head`, `tail`, `wc`,
+  `cat`, `ls`, `date`, `echo`, `cut` and `tr`, each with any words: none of
+  them writes a file
+- `grep`, an allow-list rather than any-words, because in agent shells
+  `grep` is Claude Code's ugrep wrapper, and ugrep's `--filter`, `--pager`,
+  `--view`, `--config` and `--save-config` each run a program. A `grep`
+  piece passes only with a short-option cluster from `c i n v E F w x l L o
+  q s h H r R`, `-e`/`-A`/`-B`/`-C`/`-m` with a value (separate or joined;
+  the value of `-A`, `-B`, `-C` and `-m` must be only digits on the
+  assembled word, so `-A 1?` against a glob asks on its literal text), one
+  of a fixed set of long options (`--count`, `--ignore-case`,
+  `--line-number`, `--extended-regexp`, `--regexp=…`, and so on, each
+  spelled in full since ugrep also takes unambiguous abbreviations,
+  `--fil` included), or a bare operand. This allow-list applies in both
+  places `grep` was already let through: `read_only` here, and the single
+  pipe filter below, which a line reaches when the split itself fails (a
+  backslash in an operand, say); the filter is validated from a
+  case-preserved copy of the split words, because the rest of the single
+  command path folds everything to lowercase for its own gh/git matching,
+  which would otherwise turn a refused `-Q` into an allowed `-q` before the
+  check ever saw it. A planted `.ugrep` config file is a known gap, the
+  same earlier-write class as `RIPGREP_CONFIG_PATH`.
+- `printf`, unless its first argument starts with `-` (its only writing
+  flag, `-v`, assigns a shell variable; the check is on the whole assembled
+  word, so `-v`, `-vPATH`, a quoted `'-v'` and `--` all ask)
+- `base64`, only when every word after it is exactly one of `-d`, `-D` or
+  `--decode`, with at least one present: a bare `base64` (encode) and its
+  write flags, `-o`/`--output`/`-i`/`--input` (macOS base64 writes with
+  `-o`), all ask
+- `sort`, an allow-list rather than a deny-list of the writing flags,
+  because GNU sort takes any unambiguous abbreviation of a long option
+  (`--out=x` is `--output`), so a deny-list would still leak
+  `--compress=sh`. A `sort` piece passes only with a short-option cluster
+  from `b d f g h i M n r R s u V z`, `-k`/`-t` with a value (separate or
+  joined, `-k2,2` or `-t,`), one of a fixed set of long options
+  (`--reverse`, `--numeric-sort`, `--unique`, `--key=…`, and so on), or a
+  bare operand
+- `uniq`, only with no operand at all (its second operand is the output
+  file) and a fixed set of read-only options; `-f` and `-s` take a value
+  that must be only digits on the assembled word, so a shell glob the hook
+  never expands (`uniq -f 1?` against files `10`, `1a`, `1b`, which would
+  expand to `uniq -f 10 1a 1b` and write `1b`) still asks on its literal
+  text
 
 A piece whose first word is anything else, an environment assignment
 included, makes the whole line fall through to the rules above, so a read
-chained with `gh pr merge`, `git push`, `gh pr create --draft` or `echo`
-asks as it did before. The split falls through the same way on anything it
-can't read cleanly: `$`, a backtick, a brace, `<`, `>`, a backslash or a
-newline anywhere, quoted or not; outside quotes, any character but letters,
-digits, `_./:=,@%+-`, spaces and the separators, which rules out globs,
-`#`, `(`, a lone `&` and `|&`; an empty piece; or an unclosed quote. A quoted
-string is one word, so `rg 'a|b'` is not split.
+chained with `gh pr merge`, `git push`, `gh pr create --draft` or `cat`
+piped into `sh` asks as it did before.
+
+A bare `\n` ends the current piece the same way `;` does, but only between
+commands: at the start of the line, right after a separator, or on a blank
+or trailing line, it is whitespace, so `gh pr view 12 &&` followed by a
+newline and `git status` still passes, and so does a trailing blank line. A
+newline right after a separator, with nothing between them (`gh pr view
+12` then a newline then `&& git status`), still asks, the same as an empty
+piece from `;;` does. Any `\r`, CRLF included, still fails the split, since
+bash keeps a bare CR as an ordinary word character rather than a separator,
+and a newline inside a quoted string still fails it too.
+
+A lone `\r` never starts a second command, in bash or zsh: neither shell
+splits a word on a bare CR, so `gh pr view 12` CR `git status` runs as one
+`gh pr view` call with a garbled argument, never two commands. The split
+still refuses it (a `\r` anywhere fails it), and the single-command path
+below then reads the whole garbled line as a `gh pr view` read, which is
+the correct outcome for what is, to the shell, one command; there is no
+row for this, and none is owed. `$reads` matching on a command's prefix is
+by design, not a gap this split is meant to close: `gh pr view` with any
+trailing arguments is a read, and the checks above already refuse a
+`;`/`&&`/`||`/`|` separator before it can hide a second command; closing
+the prefix match would also need to anchor `$token`, `$draft`, `$stack`
+and `pr_edit_ready`, each of which depends on today's shape allowing
+trailing flags and operands. `$flat` turns a bare `\n` into a space for the
+single-command path's own word-splitting (`$norm`, `$words`) but leaves a
+bare `\r` alone, matching bash's own treatment of the two characters; no
+row in the suite needs `\r` neutralised there too, since the prefix match
+above already covers the one shape a stray `\r` can produce.
+
+An unquoted `?` is a word character, alongside `=`, so a `gh api` endpoint
+with a ref query string (`repos/o/r/contents/a.php?ref=v1.3.0`) counts as
+one word. It stops short of letting a glob through: a word with an
+unquoted `?` still fails the whole split when its first character is `-`
+or `?`, because a word starting with a letter, digit, `_`, `.` or `/` can
+only glob-expand to other words sharing that first character, never to a
+flag; `*`, `[` and `]` still fail the split outright. A quoted `?` never
+counts towards this (only an unquoted segment can contribute the risk), so
+a word built from a quoted `-` next to an unquoted `?x` still fails, while
+a lone quoted `'?'` never trips it. This is not tested by creating a file
+named `-XPUT` in a fixture directory, since the hook never expands globs;
+the refusal is asserted directly instead. The rule assumes bash's
+globbing; under zsh, `NOMATCH` makes an unmatched `?` word fail the whole
+command with "no matches found" before it ever reaches the hook, which is
+safe but means an agent should single-quote such an endpoint rather than
+rely on the shell leaving it alone.
+
+The split falls through the same way on anything it can't read cleanly:
+`$`, a backtick, a brace, `<`, `>`, a backslash anywhere, quoted or not;
+outside quotes, any character but letters, digits, `_./:=,@%+?-`, spaces
+and the separators, which rules out `*`, `[`, `]`, `#`, `(`, a lone `&` and
+`|&`; an empty piece; or an unclosed quote. A quoted string is one word, so
+`rg 'a|b'` is not split.
 
 The other pieces are reads an agent could already run on their own line,
 because a line with no `gh` word only meets the push checks. What the split
 adds is that a gh read can share the line, so it has to see the same
 pieces the shell does.
+
+When a line is not a pass, it ends one of three ways, in this order: a
+deny, when removing harmless redirects leaves nothing but reads (next);
+an ask with the merge-and-push reason; or an ask with the unconfirmed
+reason naming what stopped it (both below, under "Two reasons to ask").
 
 ### A read line held up only by `2>&1` or `>/dev/null` is refused
 
@@ -607,7 +723,54 @@ view > out.txt`, pass as they always have. A redirect to a file stays in the
 line, so the split still refuses it and the line asks, as does any line
 that still holds a write or an unknown command once the redirects are gone.
 Because the removal works on the raw text, a quoted `'2>&1'` goes too. That
-can only turn an ask into a deny, and a deny runs nothing.
+can only turn an ask into a deny, and a deny runs nothing. The deny check
+runs against a second copy of the line with the redirects stripped out,
+never against the words the reason below is built from, so a line that
+ends up asking still gets a reason that describes what the agent actually
+typed.
+
+#### Two reasons to ask
+
+The decision is `ask` in every case it was before; only the prompt's text
+changes. The git checks above this split, and any line where either
+reading (quotes and backslashes stripped, or every quoted string folded to
+one word) matches a known publishing shape — `gh pr merge|create|new
+|edit|ready|close`, a `gh stack` or `gh repo` subcommand other than `view`,
+`gh release create`, or `gh api` with a method other than GET, a field
+flag (`-f`, `-F`, `--field`, `--raw-field`, `--input`, joined forms
+included) or `graphql` — keep today's text about merging and pushing
+needing Joey. This check runs whether the split failed outright or
+succeeded with one or more pieces refused, so a publishing shape hidden
+behind an unrecognised wrapper (`bash -c "gh pr merge 1"`, `echo 12 |
+xargs gh pr merge`) still gets the merge-and-push text rather than
+sounding like the hook merely couldn't read the line.
+
+Everything else gets a different reason: the hook says it could not
+confirm the line is read-only, names what stopped it, and says in one
+sentence what it does let through. When the split itself failed, that
+name is the first character that stopped it, cut to 120 characters
+(`it couldn't split the line at "$"`), or `newline`/`CR` in place of the
+raw byte when a bare newline inside a quoted string or a stray `\r`
+is what stopped it. When the split succeeded but one or more pieces were
+not reads, it names every refused piece, each cut to 120 characters and
+the whole list to 400, joined with `; ` (`gh pr view 12; ./merge.sh` names
+`./merge.sh`; `gh pr view 1; sed 1q x; ./y.sh` names both pieces), with
+the hook's internal word-join placeholder character shown as a space, so
+a refused piece rebuilt from a quoted argument with internal spaces (a
+quoted commit message, say) reads with its original spacing rather than
+the placeholder. The named text is built as a plain string and handed to
+`JSON::PP` whole, never spliced into a JSON string by hand, and every
+byte outside printable ASCII is shown as `\xNN` before encoding, so a
+quote, backslash or control byte inside a refused piece can't break the
+hook's own JSON or land a raw escape sequence in Joey's prompt.
+
+Known gaps, pre-existing and already JSH-51's: an earlier write the reads
+above trust by construction, such as a `.gitattributes` `textconv` filter
+that `git show`/`git diff` runs over a file's content, a `core.fsmonitor`
+hook that almost any git read invokes, or a `RIPGREP_CONFIG_PATH` file that
+injects extra flags into `rg`. The hook reads only the command text, so
+none of these are visible to it; closing them needs the earlier write
+caught, not this guard.
 
 ### A PR's title, body and ready flag pass
 

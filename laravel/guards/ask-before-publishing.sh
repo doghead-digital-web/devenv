@@ -12,8 +12,18 @@ field() {
 }
 
 ask() {
-    [[ -n "${bare-}" ]] && chain_reads "$bare" && deny
-    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Merging and pushing to main need Joey. Feature branches, draft PRs, PR titles and bodies, and readying a PR publish freely, but merging, retargeting a PR, pushing to main, or force-pushing outside gh stack waits for approval from Joey."}}'
+    if [[ -n "${bare-}" ]] && (chain_reads "$bare"); then
+        deny
+    fi
+    if [[ -n "${UNCONFIRMED_REASON:-}" ]]; then
+        INPUT="$UNCONFIRMED_REASON" perl -MJSON::PP -e '
+            my $msg = "Joey has to approve: the hook could not confirm this line is read-only ($ENV{INPUT}). It lets through a line made only of known reads joined by ;, &&, || or |, or by newlines.";
+            $msg =~ s/([^\x20-\x7e])/sprintf("\\x%02x", ord($1))/ge;
+            print JSON::PP->new->utf8->encode({hookSpecificOutput=>{hookEventName=>"PreToolUse",permissionDecision=>"ask",permissionDecisionReason=>$msg}});
+        '
+    else
+        printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Merging and pushing to main need Joey. Feature branches, draft PRs, PR titles and bodies, and readying a PR publish freely, but merging, retargeting a PR, pushing to main, or force-pushing outside gh stack waits for approval from Joey."}}'
+    fi
     exit 0
 }
 
@@ -27,7 +37,8 @@ cwd=$(field cwd) || ask
 
 flat=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g; s/\n/ /g') || ask
 norm=$(printf '%s' "$flat" | perl -0777 -pe 's/["\x27\\]//g; $_ = lc') || ask
-words=$(printf '%s' "$flat" | perl -0777 -pe 's{\x27([^\x27]*)\x27|"((?:[^"\\]|\\.)*)"}{my $s = $1 // $2; $s =~ s/\s/\x1f/g; length $s ? $s : "\x1f"}ge; s/["\x27\\]//g; $_ = lc') || ask
+wordscase=$(printf '%s' "$flat" | perl -0777 -pe 's{\\(.)|\x27([^\x27]*)\x27|"((?:[^"\\]|\\.)*)"}{if (defined $1) { $1 =~ /\s/ ? "\x1f" : $1 } else { my $s = $2 // $3; $s =~ s/\s/\x1f/g; length $s ? $s : "\x1f" }}ge; s/["\x27\\]//g') || ask
+words=$(printf '%s' "$wordscase" | perl -pe '$_ = lc') || ask
 unquoted=$(printf '%s' "$cmd" | sed -E "s/\"[^\"]*\"//g; s/'[^']*'//g") || ask
 
 has() { printf '%s' "$norm" | grep -Eq "$@" || printf '%s' "$words" | grep -Eq "$@"; }
@@ -79,6 +90,7 @@ api_get() {
             -h | --header)
                 i=$((i + 1))
                 [[ "${w[i]-}" == -* ]] && return 1
+                case "${w[i]-}" in *[?*[]*) return 1 ;; esac
                 printf '%s' "${w[i]-}" | grep -qi override && return 1
                 ;;
             -x | --method)
@@ -127,8 +139,38 @@ pr_edit_ready() {
     [[ "${w[2]}" == ready || "$m" -gt 0 ]]
 }
 
+grep_ok() {
+    local a=("$@") i v
+    for ((i = 1; i < ${#a[@]}; i++)); do
+        v="${a[i]}"
+        case "$v" in
+            --count | --ignore-case | --line-number | --invert-match | --extended-regexp | --fixed-strings | --word-regexp | --line-regexp | --files-with-matches | --files-without-match | --only-matching | --quiet | --no-messages | --recursive | --regexp=*) ;;
+            --max-count=* | --after-context=* | --before-context=* | --context=*)
+                [[ "${v#*=}" =~ ^[0-9]+$ ]] || return 1
+                ;;
+            -e)
+                i=$((i + 1))
+                [[ -n "${a[i]-}" ]] || return 1
+                ;;
+            -A | -B | -C | -m)
+                i=$((i + 1))
+                [[ "${a[i]-}" =~ ^[0-9]+$ ]] || return 1
+                ;;
+            -e*) ;;
+            -[ABCm][0-9]*)
+                [[ "$v" =~ ^-[ABCm][0-9]+$ ]] || return 1
+                ;;
+            -[cinvEFwxlLoqshHrR]*)
+                [[ "$v" =~ ^-[cinvEFwxlLoqshHrR]+$ ]] || return 1
+                ;;
+            -*) return 1 ;;
+            *) ;;
+        esac
+    done
+}
+
 read_only() {
-    local g="$*" f
+    local g="$*" f a i v n
     case "$1" in
         gh)
             [[ "$g" =~ $token ]] && return 1
@@ -159,52 +201,166 @@ read_only() {
             esac
             ;;
         rg) [[ ! "$g" =~ $rgexec ]] ;;
-        grep | jq | head | tail | wc | cat | ls | date) ;;
+        grep) grep_ok "$@" ;;
+        jq | head | tail | wc | cat | ls | date | echo | cut | tr) ;;
+        printf) [[ "${2-}" != -* ]] ;;
+        base64)
+            n=0
+            for f in "${@:2}"; do
+                case "$f" in
+                    -d | -D | --decode) n=$((n + 1)) ;;
+                    *) return 1 ;;
+                esac
+            done
+            [[ "$n" -gt 0 ]]
+            ;;
+        sort)
+            a=("$@")
+            for ((i = 1; i < ${#a[@]}; i++)); do
+                v="${a[i]}"
+                if [[ "$v" =~ ^-[bdfghiMnrRsuVz]+$ ]]; then
+                    :
+                elif [[ "$v" == -k || "$v" == -t ]]; then
+                    i=$((i + 1))
+                    [[ -n "${a[i]-}" ]] || return 1
+                elif [[ "$v" =~ ^-k.+$ || "$v" =~ ^-t.$ ]]; then
+                    :
+                elif [[ "$v" == --reverse || "$v" == --numeric-sort || "$v" == --general-numeric-sort || "$v" == --human-numeric-sort || "$v" == --version-sort || "$v" == --month-sort || "$v" == --unique || "$v" == --ignore-case || "$v" == --ignore-leading-blanks || "$v" == --dictionary-order || "$v" == --stable || "$v" == --zero-terminated || "$v" == --key=* || "$v" == --field-separator=* ]]; then
+                    :
+                elif [[ "$v" == -* ]]; then
+                    return 1
+                fi
+            done
+            ;;
+        uniq)
+            a=("$@")
+            n=0
+            for ((i = 1; i < ${#a[@]}; i++)); do
+                v="${a[i]}"
+                case "$v" in
+                    -c | -d | -u | -i | -D | --count | --repeated | --unique | --ignore-case) ;;
+                    -f | -s)
+                        i=$((i + 1))
+                        [[ "${a[i]-}" =~ ^[0-9]+$ ]] || return 1
+                        ;;
+                    -f* | -s*) [[ "${v:2}" =~ ^[0-9]+$ ]] || return 1 ;;
+                    -*) return 1 ;;
+                    *) n=$((n + 1)) ;;
+                esac
+            done
+            [[ "$n" == 0 ]]
+            ;;
         *) return 1 ;;
     esac
 }
 
 chain_reads() {
-    local pieces w
+    local pieces w ok=1
+    REFUSED_PIECES=()
+    SPLIT_FAIL_INFO=
     pieces=$(CMD="$1" perl -e '
         my $s = $ENV{CMD};
-        exit 1 if $s =~ /[`\$\{\}<>\\\n\r]/;
+        if ($s =~ /([`\$\{\}<>\\\r])/) { print $1 eq "\r" ? "CR" : $1; exit 1 }
         my @pieces = ([]);
         my $w;
-        my $end = sub { push @{ $pieces[-1] }, length $w ? $w : "\x1f" if defined $w; undef $w };
+        my $need_new_piece = 0;
+        my $uq = 0;
+        my $lastsep = ";";
+        my $end = sub {
+            if (defined $w) {
+                if ($uq && $w =~ /^[-?]/) { print $w; exit 1 }
+                push @{ $pieces[-1] }, length $w ? $w : "\x1f";
+            }
+            undef $w;
+            $uq = 0;
+        };
         for ($s) {
             until (/\G\z/gc) {
                 if (/\G[ \t]+/gc) { $end->() }
-                elsif (/\G(?:;|&&|\|\|?)/gc) { $end->(); @{ $pieces[-1] } or exit 1; push @pieces, [] }
-                elsif (/\G([A-Za-z0-9_.\/:=,@%+-]+)/gc) { $w .= $1 }
-                elsif (/\G\x27([^\x27]*)\x27/gc || /\G"([^"]*)"/gc) { (my $q = $1) =~ s/\s/\x1f/g; $w .= $q }
-                else { exit 1 }
+                elsif (/\G\n/gc) { $end->(); $need_new_piece = 1 if @{ $pieces[-1] } }
+                elsif (/\G(;|&&|\|\|?)/gc) {
+                    $lastsep = $1;
+                    if ($need_new_piece) { print $lastsep; exit 1 }
+                    $end->();
+                    unless (@{ $pieces[-1] }) { print $lastsep; exit 1 }
+                    push @pieces, [];
+                }
+                elsif (/\G([A-Za-z0-9_.\/:=,@%+?-]+)/gc) { my $t = $1; push(@pieces, []), ($need_new_piece = 0) if $need_new_piece; $uq ||= ($t =~ /\?/); $w .= $t }
+                elsif (/\G\x27([^\x27]*)\x27/gc || /\G"([^"]*)"/gc) {
+                    my $q0 = $1;
+                    if ($q0 =~ /\n/) { print "newline"; exit 1 }
+                    push(@pieces, []), ($need_new_piece = 0) if $need_new_piece;
+                    (my $q = $q0) =~ s/\s/\x1f/g;
+                    $w .= $q;
+                }
+                else { print substr($s, pos($s) // 0, 1); exit 1 }
             }
         }
         $end->();
-        @{ $pieces[-1] } or exit 1;
+        unless (@{ $pieces[-1] }) { print $lastsep; exit 1 }
         for (@pieces) {
             @$_ = map { lc } @$_ if lc $_->[0] eq "gh";
             print "@$_\n";
         }
-    ') || return 1
+    ')
+    if (($? != 0)); then
+        SPLIT_FAIL_INFO="$pieces"
+        return 1
+    fi
     while read -ra w; do
-        read_only "${w[@]}" || return 1
+        read_only "${w[@]}" || { REFUSED_PIECES+=("${w[*]}"); ok=0; }
     done <<<"$pieces"
+    [[ "$ok" == 1 ]]
 }
 
 chain_reads "$cmd" && exit 0
 bare=$(printf '%s' "$cmd" | perl -pe 's/[ \t]*[0-9]*>&[0-9]+//g; s/[ \t]*[0-9]*>[ \t]*\/dev\/null//g') || ask
 [[ "$bare" == "$cmd" ]] && bare=
 
+publish_pr='gh[^;&|]*[[:space:]]pr[[:space:]]+(merge|create|new|edit|ready|close)([^[:alnum:]_.-]|$)'
+publish_stack='gh[^;&|]*[[:space:]]stack[[:space:]]+(merge|unstack)([^[:alnum:]_.-]|$)'
+publish_repo='gh[^;&|]*[[:space:]]repo[[:space:]]+(clone|create|delete|edit|fork|list|rename|set-default|sync|archive|unarchive)([^[:alnum:]_.-]|$)'
+publish_release='gh[^;&|]*[[:space:]]release[[:space:]]+create([^[:alnum:]_.-]|$)'
+publish_api='gh[^;&|]*[[:space:]]api[^;&|]*(graphql|(^|[[:space:]])-{1,2}(f|field|raw-field|input)([[:space:]=]|$)|-[a-z]*f[^[:space:];&|]+|-i?x[[:space:]=]*(put|delete|patch|post)|--method[[:space:]=]*(put|delete|patch|post))'
+
+if ((${#REFUSED_PIECES[@]})); then
+    is_publish=0
+    for rp in "${REFUSED_PIECES[@]}"; do
+        if [[ "$rp" == "gh "* || "$rp" == "gh" ]]; then
+            is_publish=1
+            break
+        fi
+    done
+    if ((!is_publish)) && has -e "$publish_pr" -e "$publish_stack" -e "$publish_repo" -e "$publish_release" -e "$publish_api"; then
+        is_publish=1
+    fi
+    if ((!is_publish)); then
+        reason_text=
+        for rp in "${REFUSED_PIECES[@]}"; do
+            rp="${rp//$'\x1f'/ }"
+            reason_text="${reason_text:+$reason_text; }${rp:0:120}"
+        done
+        UNCONFIRMED_REASON="${reason_text:0:400}"
+    fi
+elif has -e "$publish_pr" -e "$publish_stack" -e "$publish_repo" -e "$publish_release" -e "$publish_api"; then
+    :
+else
+    UNCONFIRMED_REASON="it couldn't split the line at \"${SPLIT_FAIL_INFO:0:120}\""
+fi
+
 joined=$(printf '%s' "$cmd" | perl -0777 -pe 's/\\\n//g') || ask
-case "$joined" in *[\;\&\`\{]* | *\$\(* | *'<('* | *'>('* | *$'\n'*) ask ;; esac
+case "$joined" in *[\;\&\`\{]* | *\$\(* | *'<('* | *'>('* | *$'\n'* | *\$\'* | *\$\"*) ask ;; esac
 case "$norm" in *'|'*'|'*) ask ;; esac
 invocation="${words%%|*}"
 if [[ "$invocation" != "$words" ]]; then
     filter="${words#*|}"
     [[ "$filter" =~ ^[[:space:]]*(jq|head|tail|rg|grep|wc)([[:space:]]|$) ]] || ask
     [[ "$filter" =~ $rgexec || "${norm#*|}" =~ $rgexec ]] && ask
+    if [[ "$filter" =~ ^[[:space:]]*grep([[:space:]]|$) ]]; then
+        filtercase="${wordscase:$((${#invocation} + 1))}"
+        read -ra fw <<<"$filtercase"
+        grep_ok "${fw[@]}" || ask
+    fi
 fi
 read -ra w <<<"$invocation"
 g="${w[*]}"
