@@ -40,8 +40,11 @@ check() {
             my $d = eval { JSON::PP->new->utf8->decode($ENV{OUT}) };
             my $o = $d && $d->{hookSpecificOutput};
             my $r = ($o && $o->{permissionDecisionReason}) // "";
+            my $decision = $d && $o && ($o->{hookEventName} // "") eq "PreToolUse" ? ($o->{permissionDecision} // "") : "";
             my $k = "";
-            if ($d && $o && ($o->{hookEventName} // "") eq "PreToolUse" && ($o->{permissionDecision} // "") eq "ask") {
+            if ($decision eq "deny") {
+                $k = $r =~ /run every gh command alone/i ? "deny" : "";
+            } elsif ($decision eq "ask") {
                 $k = $r =~ /merg.*main.*Joey/i ? "ask" : $r =~ /could not confirm/i ? "unsure" : "";
             }
             if (length $k && length $ENV{CONTAINS}) {
@@ -408,6 +411,21 @@ check pass 'cat README.md; ls -la; date; tail -n 5 log.txt; gh run list'
 check pass 'git show HEAD --stat; gh issue view 3 | grep -c x'
 check pass 'GH pr view 12; git status'
 check pass 'gh api -X GET repos/o/r/pulls/12; git log -1 --format="%h %s"'
+check pass 'gh stack view --json | head -50'
+check deny 'gh stack view --json 2>&1 | head -50'
+check deny 'git status --short && git branch --show-current && gh stack view --json 2>&1 | head -50'
+check deny 'gh pr view 12 2>&1'
+check deny 'gh pr view 12 >/dev/null 2>&1; git status'
+check pass 'gh pr view 12 2>/dev/null'
+check pass 'gh stack view 2> /dev/null'
+check pass 'gh stack view > out.txt'
+check ask 'gh pr view 12 2>&1; gh pr merge 12'
+check unsure 'gh pr view 12 2>&1 > out.txt; git status'
+check unsure 'gh stack view 2>&1 | sh'
+check deny 'gh api repos/o/r/contents/a.php?ref=v1 --jq .content 2>&1 | base64 -d'
+check deny $'gh pr view 12 2>&1\necho done'
+check unsure 'gh pr view 12 2>&1; sort -o x' clean '' '>'
+check unsure 'gh pr view 1 2>&1; ./x.sh' clean '' '>'
 check ask 'gh pr view 12; gh pr merge 12'
 check ask 'gh pr view 12 && git push origin main'
 check ask 'gh pr view 12 && gh pr ready 12'
@@ -437,7 +455,7 @@ check ask 'gh pr view 12; git log `gh pr merge 12`'
 check ask 'gh pr view 12; { gh pr merge 12; }'
 check ask 'gh pr view 12; (gh pr merge 12)'
 check unsure 'gh pr view 12 > out.txt; git status'
-check unsure 'gh pr view 12; git status 2>/dev/null'
+check deny 'gh pr view 12; git status 2>/dev/null'
 check unsure 'gh pr view 12 < in.txt; git status'
 check pass $'gh pr view 12\ngit status'
 check pass $'gh pr view 12\n\ngit status\n'

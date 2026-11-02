@@ -12,6 +12,9 @@ field() {
 }
 
 ask() {
+    if [[ -n "${bare-}" ]] && (chain_reads "$bare"); then
+        deny
+    fi
     if [[ -n "${UNCONFIRMED_REASON:-}" ]]; then
         INPUT="$UNCONFIRMED_REASON" perl -MJSON::PP -e '
             my $msg = "Joey has to approve: the hook could not confirm this line is read-only ($ENV{INPUT}). It lets through a line made only of known reads joined by ;, &&, || or |, or by newlines.";
@@ -21,6 +24,11 @@ ask() {
     else
         printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":"Merging and pushing to main need Joey. Feature branches, draft PRs, PR titles and bodies, and readying a PR publish freely, but merging, retargeting a PR, pushing to main, or force-pushing outside gh stack waits for approval from Joey."}}'
     fi
+    exit 0
+}
+
+deny() {
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Refused: run every gh command alone, in its own Bash call, with no 2>&1, pipe, redirect or second command. Rerun it bare and read the whole output."}}'
     exit 0
 }
 
@@ -250,7 +258,7 @@ chain_reads() {
     local pieces w ok=1
     REFUSED_PIECES=()
     SPLIT_FAIL_INFO=
-    pieces=$(CMD="$cmd" perl -e '
+    pieces=$(CMD="$1" perl -e '
         my $s = $ENV{CMD};
         if ($s =~ /([`\$\{\}<>\\\r])/) { print $1 eq "\r" ? "CR" : $1; exit 1 }
         my @pieces = ([]);
@@ -305,7 +313,9 @@ chain_reads() {
     [[ "$ok" == 1 ]]
 }
 
-chain_reads && exit 0
+chain_reads "$cmd" && exit 0
+bare=$(printf '%s' "$cmd" | perl -pe 's/[ \t]*[0-9]*>&[0-9]+//g; s/[ \t]*[0-9]*>[ \t]*\/dev\/null//g') || ask
+[[ "$bare" == "$cmd" ]] && bare=
 
 publish_pr='gh[^;&|]*[[:space:]]pr[[:space:]]+(merge|create|new|edit|ready|close)([^[:alnum:]_.-]|$)'
 publish_stack='gh[^;&|]*[[:space:]]stack[[:space:]]+(merge|unstack)([^[:alnum:]_.-]|$)'
