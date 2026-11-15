@@ -35,6 +35,22 @@
           ]
         }
       ]
+    },
+    {
+      "focused_block_id": "block:b9e",
+      "label": "hrvst-9-reverted",
+      "window_id": "window:w9e",
+      "layers": [
+        {
+          "bounds": [0, 0, 1, 1],
+          "kind": "tiled",
+          "layer_id": "layer:9e1",
+          "layout": {"rect": [0, 0, 1, 1], "block_id": "block:b9e"},
+          "blocks": [
+            {"block_id": "block:b9e", "label": "shell", "creator_name": "com.example.terminal", "flavor": "com.example.terminal.shell", "host_id": "host-1", "owner": "client:c1"}
+          ]
+        }
+      ]
     }
   ]
 }

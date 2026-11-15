@@ -908,15 +908,22 @@ directly with a program has no ancestors, and an exited kept-open block has
 no foreground and reports none at all, so it skips with "reports no working
 directory". Each directory is compared with the worktree inside `jq`, as a
 whole string: a path holding a newline would otherwise split into lines that
-each look inside the worktree, so it counts as outside and the note shows
-the newline as `?`. Each ID passed to rex comes from the JSON, never a label
-or a suffix, and an empty ID skips the window.
+each look inside the worktree, so it counts as outside. The note prints
+the path with every control character (C0, DEL and C1) shown as `?`, since
+a working directory is whatever a process in the block chose and an escape
+sequence in it would otherwise repaint the plan before Joey answers. Each
+ID passed to rex comes from the JSON, never a label or a suffix, and an
+empty ID skips the window.
 
 The reply shapes the tests fake (`rex ls --json`, `rex window ls --json`,
 `rex block call process`, `rex block inspect --json`, `rex whoami --json`)
 were checked against a live rex on 2026-11-15: every field `teardown` reads
 is there, and `window ls --json` returns full IDs with the default
-`--short`. The fixtures use generic IDs and paths in those shapes.
+`--short`. The fixtures use generic IDs and paths in those shapes. The
+remote `whoami` fixture (a `tcp://` endpoint) is constructed, not captured:
+only a local server was available, so what a remote server reports there is
+an assumption, and the check treats any endpoint that isn't `unix://` as
+remote.
 
 After the `y` and before closing, `teardown` lists the windows again and
 repeats the whole check on the planned window. It closes only when the

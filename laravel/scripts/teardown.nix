@@ -223,7 +223,7 @@
         [.foreground.cwd, .child.cwd, .ancestors[]?.cwd] | map(select(. != null and . != "")) as $cwds
         | if ($cwds | length) == 0 then "none"
           else ($cwds | map(select(. != $path and (startswith($path + "/") | not))) | first) as $outside
-            | if $outside == null then "inside" else "outside " + ($outside | gsub("[\n\r]"; "?")) end
+            | if $outside == null then "inside" else "outside " + ($outside | gsub("[\u0000-\u001f\u007f-\u009f]"; "?")) end
           end
       ' 2>/dev/null) || { check_problem="rex could not read block $block"; return; }
       case "$verdict" in

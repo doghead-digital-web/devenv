@@ -412,13 +412,15 @@ test('a dry run skips a window with a block that cannot be proven to be in the w
 
     expect($result->exitCode())->toBe(0)
         ->and($result->output())->toContain('  rex tab          skipped: '.str_replace('@ROOT@', $root, $note))
-        ->and($result->output())->not->toContain('close tab');
+        ->and($result->output())->not->toContain('close tab')
+        ->and($result->output())->not->toMatch('/[\x00-\x08\x0b-\x1f\x7f]|\xc2[\x80-\x9f]/');
 })->with([
     'a block that reports no working directory at all' => ['hrvst-10-squashed', 'block block:b10 reports no working directory'],
     'a block on another host' => ['hrvst-9-reverted', 'block block:b9b is not on this host'],
     'a block rex cannot read' => ['hrvst-11-merge-commit', 'rex could not read block block:b11'],
     'a block whose child process is outside the worktree' => ['hrvst-12-ahead', 'block block:b12 is outside the worktree (@ROOT@/elsewhere)'],
     'a block whose ancestor process is outside the worktree' => ['hrvst-12-ahead', 'block block:b12a is outside the worktree (@ROOT@/elsewhere)', ['REXSTUB_WINDOWS' => 'rex-windows-hostile.json']],
+    'a block whose working directory holds an escape sequence, a bell, a delete and an 8-bit CSI' => ['hrvst-9-reverted', 'block block:b9e is outside the worktree (@ROOT@/elsewhere?[8mhidden?bell?del?csi)', ['REXSTUB_WINDOWS' => 'rex-windows-hostile.json']],
     'a block whose working directory holds two lines that each look inside' => ['hrvst-11-merge-commit', 'block block:b11n is outside the worktree (@ROOT@/hrvst-11-merge-commit?@ROOT@/hrvst-11-merge-commit)', ['REXSTUB_WINDOWS' => 'rex-windows-hostile.json']],
 ]);
 
