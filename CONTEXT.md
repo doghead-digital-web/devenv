@@ -977,10 +977,9 @@ one word, the worktree as the working directory, and `claude`, `direnv` and
 `lazygit` found on the login `PATH`. It did not start a real Claude, so
 Claude reading the brief as its prompt with `--remote-control` first is not
 proven live. The tests pin what `feature` hands to `rex`, not what rex does
-with it. "A brief reaches the claude argument list
-byte for byte" feeds briefs holding `"`, `'`, `$`, `${HOME}`, `$(id)`, a
-backtick, `;`, `|`, `&&`, `*` and `\` and asserts each is `rex`'s last word,
-unchanged.
+with it. "A brief reaches the claude argument list byte for byte" feeds
+briefs holding `"`, `'`, `$`, `${HOME}`, `$(id)`, a backtick, `;`, `|`, `&&`,
+`*` and `\` and asserts each is `rex`'s last word, unchanged.
 
 `--remote-control` takes an optional value, so written straight before the
 brief it would swallow the brief as the Remote Control session name and the
@@ -996,16 +995,16 @@ whitespace. The `-` refusal is a security check: a brief of
 `--settings={"disableAllHooks":true}` or `--add-dir=/` would otherwise start
 the lead with the guards off, and each has a test row. A `--` before the
 brief would end option parsing, but `claude --help` doesn't document it, so
-`feature` doesn't use it and keeps the refusal. It also refuses, before anything is created, a worktree name
-outside `^[a-z0-9][a-z0-9._-]*$` and one ending in `test` or `test-<N>`,
-which `database-names.nix` would refuse only after `wt switch --create` had
-made the worktree and branch.
+`feature` doesn't use it and keeps the refusal. It also refuses, before
+anything is created, a worktree name outside `^[a-z0-9][a-z0-9._-]*$` and
+one ending in `test` or `test-<N>`, which `database-names.nix` would refuse
+only after `wt switch --create` had made the worktree and branch.
 
 A control character in a brief is still refused, although an argument word
 can carry one. An escape or OSC sequence in a brief reaches Joey's terminal
 when Claude renders the prompt, and terminal sequences are input a brief
-never needs. A newline or carriage return is refused only because the rule is one line of
-plain text; nothing breaks if one gets through.
+never needs. A newline or carriage return is refused only because the rule
+is one line of plain text; nothing breaks if one gets through.
 
 ## `feature`'s control-character check on the brief needs `grep -z`
 
