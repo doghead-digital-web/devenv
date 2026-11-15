@@ -72,7 +72,7 @@ function featureFixtureRoot(): string
 
     File::ensureDirectoryExists($root.'/bin');
     writeFeatureStub($root.'/bin', 'wt', 'echo "unexpected wt $*" >&2; exit 1');
-    writeFeatureStub($root.'/bin', 'herdr', 'echo "unexpected herdr $*" >&2; exit 1');
+    writeFeatureStub($root.'/bin', 'rex', 'echo "unexpected rex $*" >&2; exit 1');
     writeFeatureStub($root.'/bin', 'direnv', 'exit 0');
     writeFeature($root.'/bin');
 
@@ -91,7 +91,7 @@ function runFeature(array $arguments, array $environment = []): ProcessResult
         ->env([
             ...isolatedFeatureGit(),
             'PATH' => $root.'/bin:'.getenv('PATH'),
-            'HERDR_ENV' => '1',
+            'REX_SESSION' => 'session:s0',
             ...$environment,
         ])
         ->run([$root.'/bin/feature', ...$arguments]);
@@ -111,11 +111,13 @@ test('a worktree name ending in test is refused', function (string $name): void 
         ->and($result->errorOutput())->toContain("doesn't end in test");
 })->with(['jsh-2-test', 'jsh-2-test-3']);
 
-test('a brief with a leading character Claude or herdr would read as an option is refused', function (string $char): void {
+test('a brief with a leading character Claude would read as a command or an option is refused', function (string $char): void {
     $result = runFeature(['jsh-2-b', "{$char}something"]);
 
     expect($result->exitCode())->toBe(1)
-        ->and($result->errorOutput())->toContain("can't start with");
+        ->and($result->errorOutput())->toContain("can't start with")
+        ->and($result->errorOutput())->toContain('Claude')
+        ->and($result->errorOutput())->not->toContain('herdr');
 })->with([
     '!' => ['!'],
     '/' => ['/'],
@@ -130,7 +132,8 @@ test('a brief with a control character is refused', function (string $label, str
     $result = runFeature(['jsh-2-b', "line one{$char}line two"]);
 
     expect($result->exitCode())->toBe(1)
-        ->and($result->errorOutput())->toContain('control character');
+        ->and($result->errorOutput())->toContain('control character')
+        ->and($result->errorOutput())->not->toContain('herdr');
 })->with([
     'a newline' => ['newline', "\n"],
     'a carriage return' => ['carriage return', "\r"],
@@ -145,45 +148,76 @@ test('a worktree name that would collide with an existing worktree once separato
         ->and($result->errorOutput())->toContain('same database');
 });
 
-test('no herdr workspace labelled jshq is refused', function (): void {
+test('a run outside a rex pane is refused', function (): void {
+    $result = runFeature(['jsh-2-b'], ['REX_SESSION' => false]);
+
+    expect($result->exitCode())->toBe(1)
+        ->and($result->errorOutput())->toContain('run this from a rex pane');
+});
+
+test('no rex session labelled jshq is refused', function (): void {
     $bin = featureFixtureRoot().'/bin';
-    writeFeatureStub($bin, 'herdr', <<<'SH'
-        if [ "$1 $2" = "workspace list" ]; then
-            echo '{"result":{"workspaces":[]}}'
+    writeFeatureStub($bin, 'rex', <<<'SH'
+        if [ "$1 $2" = "ls --json" ]; then
+            echo '{"sessions":[{"session_id":"session:s9","label":"harvst"}]}'
             exit 0
         fi
-        echo "unexpected herdr $*" >&2
+        echo "unexpected rex $*" >&2
         exit 1
         SH);
 
     $result = runFeature(['jsh-2-b']);
 
     expect($result->exitCode())->toBe(1)
-        ->and($result->errorOutput())->toContain('no herdr workspace is labelled jshq');
+        ->and($result->errorOutput())->toContain('no rex session is labelled jshq');
 });
 
-test('more than one herdr workspace labelled jshq is refused', function (): void {
+test('more than one rex session labelled jshq is refused', function (): void {
     $bin = featureFixtureRoot().'/bin';
-    writeFeatureStub($bin, 'herdr', <<<'SH'
-        if [ "$1 $2" = "workspace list" ]; then
-            echo '{"result":{"workspaces":[{"label":"jshq","workspace_id":"w1"},{"label":"jshq","workspace_id":"w2"}]}}'
+    writeFeatureStub($bin, 'rex', <<<'SH'
+        if [ "$1 $2" = "ls --json" ]; then
+            echo '{"sessions":[{"session_id":"session:s1","label":"jshq"},{"session_id":"session:s2","label":"jshq"}]}'
             exit 0
         fi
-        echo "unexpected herdr $*" >&2
+        echo "unexpected rex $*" >&2
         exit 1
         SH);
 
     $result = runFeature(['jsh-2-b']);
 
     expect($result->exitCode())->toBe(1)
-        ->and($result->errorOutput())->toContain('more than one herdr workspace is labelled jshq');
+        ->and($result->errorOutput())->toContain('more than one rex session is labelled jshq');
 });
 
-test('a worktree opens as a feature lead in herdr, with the full launch sequence', function (): void {
+/**
+ * @return list<list<string>>
+ */
+function loggedCalls(string $log): array
+{
+    $calls = [];
+
+    foreach (explode("\n", (string) file_get_contents($log)) as $line) {
+        if ($line === '@@call') {
+            $calls[] = [];
+        } elseif ($calls !== [] && $line !== '') {
+            $calls[array_key_last($calls)][] = $line;
+        }
+    }
+
+    return $calls;
+}
+
+/**
+ * @return array{result: ProcessResult, rex: list<list<string>>, direnv: list<list<string>>, path: string, bin: string}
+ */
+function launchFeature(string $name, string $brief = ''): array
+{
     $root = featureFixtureRoot();
     $bin = $root.'/bin';
-    $log = $root.'/herdr.log';
-    File::put($log, '');
+    $rexLog = $root.'/rex-'.$name.'.log';
+    $direnvLog = $root.'/direnv-'.$name.'.log';
+    File::put($rexLog, '');
+    File::put($direnvLog, '');
 
     writeFeatureStub($bin, 'wt', <<<'SH'
         if [ "$1 $2" = "switch --create" ]; then
@@ -195,45 +229,92 @@ test('a worktree opens as a feature lead in herdr, with the full launch sequence
         exit 1
         SH);
 
-    writeFeatureStub($bin, 'herdr', str_replace('__LOG__', $log, <<<'SH'
-        printf '%s\n' "$*" >> '__LOG__'
+    writeFeatureStub($bin, 'direnv', str_replace('__LOG__', $direnvLog, <<<'SH'
+        printf '@@call\n' >> '__LOG__'
+        printf '%s\n' "$@" >> '__LOG__'
+        exit 0
+        SH));
+
+    writeFeatureStub($bin, 'rex', str_replace('__LOG__', $rexLog, <<<'SH'
+        printf '@@call\n' >> '__LOG__'
+        printf '%s\n' "$@" >> '__LOG__'
         case "$1 $2" in
-            "workspace list")
-                echo '{"result":{"workspaces":[{"label":"jshq","workspace_id":"w1"}]}}'
+            "ls --json")
+                echo '{"sessions":[{"session_id":"session:s1","label":"jshq"},{"session_id":"session:s2","label":"harvst"}]}'
                 exit 0 ;;
-            "tab create")
-                echo '{"result":{"root_pane":{"pane_id":"pane-root"}}}'
+            "window new")
+                echo '{"window_id":"window:w1","block_ids":["block:lead"]}'
                 exit 0 ;;
-            "pane split")
-                echo '{"result":{"pane":{"pane_id":"pane-split"}}}'
-                exit 0 ;;
-            "pane wait-output" | "pane run" | "agent start" | "agent prompt")
+            "block rename")
                 exit 0 ;;
         esac
-        echo "unexpected herdr $*" >&2
+        case "$*" in
+            *--split=right*)
+                echo '{"block_ids":["block:lazygit"]}'
+                exit 0 ;;
+            *--split=below*)
+                echo '{"block_ids":["block:shell"]}'
+                exit 0 ;;
+        esac
+        echo "unexpected rex $*" >&2
         exit 1
         SH));
 
-    $result = runFeature(['jsh-3-happy']);
+    $result = runFeature($brief === '' ? [$name] : [$name, $brief]);
 
-    $lines = array_filter(explode("\n", (string) file_get_contents($log)), fn (string $line): bool => $line !== '');
-    $find = fn (string $prefix): ?string => array_first(
-        array_filter($lines, fn (string $line): bool => str_starts_with($line, $prefix))
-    );
+    return [
+        'result' => $result,
+        'rex' => loggedCalls($rexLog),
+        'direnv' => loggedCalls($direnvLog),
+        'path' => $root.'/'.$name,
+        'bin' => $bin,
+    ];
+}
 
-    $agentStart = $find('agent start');
-    $agentPrompt = $find('agent prompt');
-    $tabCreate = $find('tab create');
+test('a worktree opens as one rex window: the feature lead, lazygit to its right and a shell below lazygit', function (): void {
+    $run = launchFeature('jsh-3-happy');
+    $path = $run['path'];
+    $direnv = $run['bin'].'/direnv';
 
-    expect($result->exitCode())->toBe(0)
-        ->and($result->output())->toContain('open in herdr as agent lead-jsh-3-happy')
-        ->and($agentStart)->not->toBeNull()
-        ->and($agentStart)->toContain('lead-jsh-3-happy')
-        ->and($agentStart)->toContain('--agent feature-lead')
-        ->and($agentStart)->toContain('--remote-control')
-        ->and($agentStart)->not->toContain('You are the feature lead')
-        ->and($agentPrompt)->not->toBeNull()
-        ->and($agentPrompt)->toContain('You are the feature lead')
-        ->and($tabCreate)->not->toBeNull()
-        ->and($tabCreate)->toContain('--workspace w1');
+    expect($run['result']->errorOutput())->toBe('')
+        ->and($run['result']->exitCode())->toBe(0)
+        ->and($run['rex'])->toHaveCount(5)
+        ->and($run['rex'][0])->toBe(['ls', '--json'])
+        ->and(array_slice($run['rex'][1], 0, 9))->toBe(['window', 'new', '-s', 'session:s1', 'jsh-3-happy', '-c', $path, '--shell=none', '--json'])
+        ->and(array_slice($run['rex'][1], 9, 3))->toBe(['--', $direnv, 'exec'])
+        ->and(array_slice($run['rex'][1], 12, -1))->toBe([$path, 'claude', '--remote-control', '--agent', 'feature-lead', '-n', 'jsh-3-happy'])
+        ->and(array_last($run['rex'][1]))->toStartWith("You are the feature lead for jsh-3-happy, running in its own worktree at {$path}.")
+        ->and($run['rex'][2])->toBe(['block', 'rename', '-s', 'session:s1', 'block:lead', 'lead-jsh-3-happy'])
+        ->and($run['rex'][3])->toBe(['split', '-s', 'session:s1', '-b', 'block:lead', '--split=right', '-c', $path, '--focus=false', '--json', '--', $direnv, 'exec', $path, 'lazygit'])
+        ->and($run['rex'][4])->toBe(['split', '-s', 'session:s1', '-b', 'block:lazygit', '--split=below', '-c', $path, '--focus=false', '--json'])
+        ->and($run['result']->output())->toContain('block:lead');
+});
+
+test('the direnv warm-up is the only direnv wait feature makes', function (): void {
+    $run = launchFeature('jsh-3-warm');
+
+    expect($run['direnv'])->toBe([
+        ['allow', $run['path']],
+        ['exec', $run['path'], 'true'],
+    ]);
+});
+
+test('a brief reaches the claude argument list byte for byte, as the last word, after the worktree name', function (string $name, string $brief): void {
+    $run = launchFeature($name, $brief);
+    $lead = $run['rex'][1] ?? [];
+
+    expect($run['result']->errorOutput())->toBe('')
+        ->and($run['result']->exitCode())->toBe(0)
+        ->and(array_last($lead))->toBe($brief)
+        ->and($lead[count($lead) - 2])->toBe($name);
+})->with([
+    'quotes, a dollar sign and a backtick' => ['jsh-4-quotes', 'say "hi" it\'s $HOME and `date` is fine'],
+    'a backslash, a glob, a semicolon and a pipe' => ['jsh-4-shell', 'a\\b *.php; echo x | cat && (true) > out'],
+    'a trailing space and a hash' => ['jsh-4-space', 'fix #12 now '],
+]);
+
+test('the feature script holds no herdr', function (): void {
+    $script = (string) file_get_contents(featureFixtureRoot().'/bin/feature');
+
+    expect(mb_strtolower($script))->not->toContain('herdr');
 });
