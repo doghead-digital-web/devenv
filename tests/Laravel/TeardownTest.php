@@ -172,7 +172,7 @@ function worktreeFixture(): string
           "window ls")
             [ -z "${REXSTUB_WINDOWS_FAIL:-}" ] || { echo "rex: window ls failed" >&2; exit 1; }
             [ "$3 $4 $5" = "-s session:harvst --json" ] || { echo "unexpected rex $*" >&2; exit 1; }
-            file=rex-windows.json
+            file=${REXSTUB_WINDOWS:-rex-windows.json}
             if [ -n "${REXSTUB_STATE:-}" ] && [ -n "${REXSTUB_WINDOWS_AFTER:-}" ]; then
               [ ! -f "$REXSTUB_STATE/windows" ] || file=$REXSTUB_WINDOWS_AFTER
               : > "$REXSTUB_STATE/windows"
@@ -419,6 +419,17 @@ test('a dry run skips a window with a block that cannot be proven to be in the w
     'a block on another host' => ['hrvst-9-reverted', 'block block:b9b is not on this host'],
     'a block rex cannot read' => ['hrvst-11-merge-commit', 'rex could not read block block:b11'],
     'a block whose login process is outside the worktree' => ['hrvst-12-ahead', 'block block:b12 is outside the worktree (@ROOT@/elsewhere)'],
+]);
+
+test('a dry run skips a window or a block that rex lists without an ID', function (string $listing, string $note): void {
+    $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: ['REXSTUB_WINDOWS' => $listing]);
+
+    expect($result->exitCode())->toBe(0)
+        ->and($result->output())->toContain('  rex tab          skipped: '.$note)
+        ->and($result->output())->not->toContain('close tab');
+})->with([
+    'a window with no window_id' => ['rex-windows-no-window-id.json', 'rex listed the window without an ID'],
+    'a block with no block_id' => ['rex-windows-no-block-id.json', 'rex lists a block with no ID in window:w5'],
 ]);
 
 test('the teardown script no longer calls the old multiplexer', function (): void {

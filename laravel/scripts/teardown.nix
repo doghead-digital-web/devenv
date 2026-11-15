@@ -206,10 +206,10 @@
     host=$(rex_call whoami --json 2>/dev/null | ${jq} -r '.host_id // empty' 2>/dev/null || true)
     if [ -z "$host" ]; then check_problem="rex does not report this host's ID"; return; fi
     blocks=$(printf '%s' "$listing" | ${jq} -r --arg window "$window" '
-      .windows[] | select(.window_id == $window) | .layers[]?.blocks[]? | "\(.block_id // "")\t\(.host_id // "")"
+      .windows[] | select(.window_id == $window) | .layers[]?.blocks[]? | "\(.block_id // "")\u001f\(.host_id // "")"
     ' 2>/dev/null) || { check_problem="rex listed the window in a shape teardown can't read"; return; }
     if [ -z "$blocks" ]; then check_problem="rex lists no blocks in $window"; return; fi
-    while IFS=$'\t' read -r block block_host; do
+    while IFS=$'\x1f' read -r block block_host; do
       if [ -z "$block" ]; then check_problem="rex lists a block with no ID in $window"; return; fi
       if [ "$block_host" != "$host" ]; then check_problem="block $block is not on this host"; return; fi
       process=$(rex_call block call -s "$session" -b "$block" process 2>/dev/null) || { check_problem="rex could not read block $block"; return; }
