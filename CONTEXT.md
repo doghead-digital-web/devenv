@@ -969,9 +969,15 @@ rex window new -s <session> <worktree> -c <path> --json -- \
 Rex runs the command through the login shell's environment, and that login
 `PATH` is what finds `direnv` and `claude`, so the call leaves `--shell` at
 its default. The rex guide says to pass a command and its arguments "as
-separate words", which is how the brief stays one word through that shell;
-only a live launch proves that, so the test pins what `feature` hands to
-`rex`, not what rex does with it. "A brief reaches the claude argument list
+separate words", which is how the brief stays one word through that shell.
+A live check on 2026-11-15, in one throwaway window, saw the lead command's
+argument list arrive through the default login shell byte for byte, with the
+brief (quotes, `$HOME`, a backtick, `;`, `$(id)`, `\`, `*`, `|` and `&&`) as
+one word, the worktree as the working directory, and `claude`, `direnv` and
+`lazygit` found on the login `PATH`. It did not start a real Claude, so
+Claude reading the brief as its prompt with `--remote-control` first is not
+proven live. The tests pin what `feature` hands to `rex`, not what rex does
+with it. "A brief reaches the claude argument list
 byte for byte" feeds briefs holding `"`, `'`, `$`, `${HOME}`, `$(id)`, a
 backtick, `;`, `|`, `&&`, `*` and `\` and asserts each is `rex`'s last word,
 unchanged.
