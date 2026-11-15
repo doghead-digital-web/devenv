@@ -39,6 +39,14 @@
     exit 1
   fi
 
+  case "''${REX_SERVER:-}" in
+    "" | unix://*) ;;
+    *)
+      echo "feature: REX_SERVER points at a server that is not on this machine, where the lead would start in another home directory; run this from a pane of the local rex server" >&2
+      exit 1
+      ;;
+  esac
+
   names_of() {
     nix-instantiate --eval --strict --json --argstr worktreeName "$1" \
       --expr '{ worktreeName }: import ${../database-names.nix} "${appName}" worktreeName' |
@@ -76,6 +84,14 @@
 
   wt switch --create "$name" --no-cd --yes
   path=$(git worktree list --porcelain | ${gawk} -v branch="refs/heads/$name" '$1 == "worktree" { p = $2 } $1 == "branch" && $2 == branch { print p }')
+  if [ -z "$path" ]; then
+    echo "feature: wt left no worktree on branch $name; not opening a window" >&2
+    exit 1
+  fi
+  if [ ! -d "$path" ]; then
+    echo "feature: the worktree path $path is not a directory; not opening a window" >&2
+    exit 1
+  fi
   worktree=$(basename "$path")
 
   direnv allow "$path"
@@ -86,13 +102,20 @@
     brief="You are the feature lead for $worktree, running in its own worktree at $path. The app is not running; it answers at https://$worktree.${appName}.test once devenv up runs. Find its ticket in Linear and pick up the loop where the ticket stands."
   fi
 
-  direnv_bin=$(command -v direnv)
-  window=$(rex window new -s "$session" "$worktree" -c "$path" --shell=none --json -- \
-    "$direnv_bin" exec "$path" claude --remote-control --agent feature-lead -n "$worktree" "$brief")
-  lead_block=$(printf '%s' "$window" | ${jq} -r '.block_ids[0]')
+  window=$(rex window new -s "$session" "$worktree" -c "$path" --json -- \
+    direnv exec "$path" claude --remote-control --agent feature-lead -n "$worktree" "$brief")
+  lead_block=$(printf '%s' "$window" | ${jq} -r '.block_ids[0] // empty')
+  if [[ "$lead_block" != block:* ]]; then
+    echo "feature: rex opened the window but returned no block ID for the lead" >&2
+    exit 1
+  fi
   rex block rename -s "$session" "$lead_block" "lead-$worktree"
   lazygit_block=$(rex split -s "$session" -b "$lead_block" --split=right -c "$path" --focus=false --json -- \
-    "$direnv_bin" exec "$path" lazygit | ${jq} -r '.block_ids[0]')
+    direnv exec "$path" lazygit | ${jq} -r '.block_ids[0] // empty')
+  if [[ "$lazygit_block" != block:* ]]; then
+    echo "feature: rex opened the lazygit block but returned no block ID for it" >&2
+    exit 1
+  fi
   rex split -s "$session" -b "$lazygit_block" --split=below -c "$path" --focus=false --json >/dev/null
 
   echo "feature: $worktree is open in rex; its feature lead is block $lead_block, labelled lead-$worktree"

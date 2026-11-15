@@ -92,6 +92,7 @@ function runFeature(array $arguments, array $environment = []): ProcessResult
             ...isolatedFeatureGit(),
             'PATH' => $root.'/bin:'.getenv('PATH'),
             'REX_SESSION' => 'session:s0',
+            'REX_SERVER' => false,
             ...$environment,
         ])
         ->run([$root.'/bin/feature', ...$arguments]);
@@ -126,6 +127,18 @@ test('a brief with a leading character Claude would read as a command or an opti
     'two spaces then /' => ['  /'],
     'two spaces then -' => ['  -'],
     'a tab then -' => ["\t-"],
+]);
+
+test('a brief that is a Claude option is refused whole', function (string $brief): void {
+    $result = runFeature(['jsh-2-b', $brief]);
+
+    expect($result->exitCode())->toBe(1)
+        ->and($result->errorOutput())->toContain("can't start with");
+})->with([
+    '--permission-mode=bypassPermissions',
+    '--dangerously-skip-permissions',
+    '--settings={"disableAllHooks":true}',
+    '--add-dir=/',
 ]);
 
 test('a brief with a control character is refused', function (string $label, string $char): void {
@@ -208,10 +221,16 @@ function loggedCalls(string $log): array
 }
 
 /**
- * @return array{result: ProcessResult, rex: list<list<string>>, direnv: list<list<string>>, path: string, bin: string}
+ * @param  array<string, string|false>  $environment
+ * @return array{result: ProcessResult, rex: list<list<string>>, direnv: list<list<string>>, path: string}
  */
-function launchFeature(string $name, string $brief = ''): array
+function launchFeature(string $name, string $brief = '', array $environment = [], string $afterAdd = ':', array $replies = []): array
 {
+    $replies += [
+        'window' => '{"window_id":"window:w1","block_ids":["block:lead"]}',
+        'right' => '{"block_ids":["block:lazygit"]}',
+    ];
+
     $root = featureFixtureRoot();
     $bin = $root.'/bin';
     $rexLog = $root.'/rex-'.$name.'.log';
@@ -219,15 +238,16 @@ function launchFeature(string $name, string $brief = ''): array
     File::put($rexLog, '');
     File::put($direnvLog, '');
 
-    writeFeatureStub($bin, 'wt', <<<'SH'
+    writeFeatureStub($bin, 'wt', str_replace('__AFTER__', $afterAdd, <<<'SH'
         if [ "$1 $2" = "switch --create" ]; then
             name="$3"
             git worktree add --quiet -b "$name" "../$name" >/dev/null
+            __AFTER__
             exit 0
         fi
         echo "unexpected wt $*" >&2
         exit 1
-        SH);
+        SH));
 
     writeFeatureStub($bin, 'direnv', str_replace('__LOG__', $direnvLog, <<<'SH'
         printf '@@call\n' >> '__LOG__'
@@ -235,7 +255,7 @@ function launchFeature(string $name, string $brief = ''): array
         exit 0
         SH));
 
-    writeFeatureStub($bin, 'rex', str_replace('__LOG__', $rexLog, <<<'SH'
+    writeFeatureStub($bin, 'rex', str_replace(['__LOG__', '__WINDOW__', '__RIGHT__'], [$rexLog, $replies['window'], $replies['right']], <<<'SH'
         printf '@@call\n' >> '__LOG__'
         printf '%s\n' "$@" >> '__LOG__'
         case "$1 $2" in
@@ -243,14 +263,14 @@ function launchFeature(string $name, string $brief = ''): array
                 echo '{"sessions":[{"session_id":"session:s1","label":"jshq"},{"session_id":"session:s2","label":"harvst"}]}'
                 exit 0 ;;
             "window new")
-                echo '{"window_id":"window:w1","block_ids":["block:lead"]}'
+                echo '__WINDOW__'
                 exit 0 ;;
             "block rename")
                 exit 0 ;;
         esac
         case "$*" in
             *--split=right*)
-                echo '{"block_ids":["block:lazygit"]}'
+                echo '__RIGHT__'
                 exit 0 ;;
             *--split=below*)
                 echo '{"block_ids":["block:shell"]}'
@@ -260,32 +280,30 @@ function launchFeature(string $name, string $brief = ''): array
         exit 1
         SH));
 
-    $result = runFeature($brief === '' ? [$name] : [$name, $brief]);
+    $result = runFeature($brief === '' ? [$name] : [$name, $brief], $environment);
 
     return [
         'result' => $result,
         'rex' => loggedCalls($rexLog),
         'direnv' => loggedCalls($direnvLog),
         'path' => $root.'/'.$name,
-        'bin' => $bin,
     ];
 }
 
 test('a worktree opens as one rex window: the feature lead, lazygit to its right and a shell below lazygit', function (): void {
     $run = launchFeature('jsh-3-happy');
     $path = $run['path'];
-    $direnv = $run['bin'].'/direnv';
 
     expect($run['result']->errorOutput())->toBe('')
         ->and($run['result']->exitCode())->toBe(0)
         ->and($run['rex'])->toHaveCount(5)
         ->and($run['rex'][0])->toBe(['ls', '--json'])
-        ->and(array_slice($run['rex'][1], 0, 9))->toBe(['window', 'new', '-s', 'session:s1', 'jsh-3-happy', '-c', $path, '--shell=none', '--json'])
-        ->and(array_slice($run['rex'][1], 9, 3))->toBe(['--', $direnv, 'exec'])
-        ->and(array_slice($run['rex'][1], 12, -1))->toBe([$path, 'claude', '--remote-control', '--agent', 'feature-lead', '-n', 'jsh-3-happy'])
+        ->and(array_slice($run['rex'][1], 0, 8))->toBe(['window', 'new', '-s', 'session:s1', 'jsh-3-happy', '-c', $path, '--json'])
+        ->and(array_slice($run['rex'][1], 8, 3))->toBe(['--', 'direnv', 'exec'])
+        ->and(array_slice($run['rex'][1], 11, -1))->toBe([$path, 'claude', '--remote-control', '--agent', 'feature-lead', '-n', 'jsh-3-happy'])
         ->and(array_last($run['rex'][1]))->toStartWith("You are the feature lead for jsh-3-happy, running in its own worktree at {$path}.")
         ->and($run['rex'][2])->toBe(['block', 'rename', '-s', 'session:s1', 'block:lead', 'lead-jsh-3-happy'])
-        ->and($run['rex'][3])->toBe(['split', '-s', 'session:s1', '-b', 'block:lead', '--split=right', '-c', $path, '--focus=false', '--json', '--', $direnv, 'exec', $path, 'lazygit'])
+        ->and($run['rex'][3])->toBe(['split', '-s', 'session:s1', '-b', 'block:lead', '--split=right', '-c', $path, '--focus=false', '--json', '--', 'direnv', 'exec', $path, 'lazygit'])
         ->and($run['rex'][4])->toBe(['split', '-s', 'session:s1', '-b', 'block:lazygit', '--split=below', '-c', $path, '--focus=false', '--json'])
         ->and($run['result']->output())->toContain('block:lead');
 });
@@ -310,7 +328,47 @@ test('a brief reaches the claude argument list byte for byte, as the last word, 
 })->with([
     'quotes, a dollar sign and a backtick' => ['jsh-4-quotes', 'say "hi" it\'s $HOME and `date` is fine'],
     'a backslash, a glob, a semicolon and a pipe' => ['jsh-4-shell', 'a\\b *.php; echo x | cat && (true) > out'],
+    'a semicolon and a command substitution' => ['jsh-4-subst', 'done; $(id) and ${HOME}'],
     'a trailing space and a hash' => ['jsh-4-space', 'fix #12 now '],
+]);
+
+test('a worktree wt left no usable directory for is refused before anything is opened', function (string $name, string $afterAdd, string $reason): void {
+    $run = launchFeature($name, afterAdd: $afterAdd);
+
+    expect($run['result']->exitCode())->toBe(1)
+        ->and($run['result']->errorOutput())->toContain($reason)
+        ->and(array_filter($run['rex'], fn (array $call): bool => $call[0] !== 'ls'))->toBeEmpty()
+        ->and($run['direnv'])->toBeEmpty();
+})->with([
+    'no worktree for the branch' => ['jsh-5-none', 'git worktree remove --force "../$name"; git branch -D "$name" >/dev/null', 'no worktree'],
+    'a worktree whose directory is gone' => ['jsh-5-gone', 'rm -rf "../$name"', 'is not a directory'],
+]);
+
+test('a REX_SERVER that is not the local unix socket is refused before anything is opened', function (string $server): void {
+    $run = launchFeature('jsh-6-remote', environment: ['REX_SERVER' => $server]);
+
+    expect($run['result']->exitCode())->toBe(1)
+        ->and($run['result']->errorOutput())->toContain('REX_SERVER')
+        ->and($run['rex'])->toBeEmpty();
+})->with(['a tcp address' => 'tcp://127.0.0.1:9', 'a host label' => 'devbox', 'a host and port' => 'devbox:7000']);
+
+test('the local unix socket REX_SERVER a rex pane sets is allowed', function (): void {
+    $run = launchFeature('jsh-6-local', environment: ['REX_SERVER' => 'unix:///tmp/rex.sock']);
+
+    expect($run['result']->exitCode())->toBe(0)
+        ->and($run['rex'])->toHaveCount(5);
+});
+
+test('a rex reply with no block ID stops the launch before the next call uses it', function (string $name, array $replies, int $calls): void {
+    $run = launchFeature($name, replies: $replies);
+
+    expect($run['result']->exitCode())->toBe(1)
+        ->and($run['result']->errorOutput())->toContain('block ID')
+        ->and($run['rex'])->toHaveCount($calls);
+})->with([
+    'an empty block list from window new' => ['jsh-7-empty', ['window' => '{"window_id":"window:w1","block_ids":[]}'], 2],
+    'no block_ids from window new' => ['jsh-7-none', ['window' => '{}'], 2],
+    'an empty block list from the first split' => ['jsh-7-split', ['right' => '{"block_ids":[]}'], 4],
 ]);
 
 test('the feature script holds no herdr', function (): void {
