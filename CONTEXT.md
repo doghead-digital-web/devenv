@@ -910,6 +910,13 @@ direnv wait feature makes").
 and refuses rather than guess when no session or more than one carries that
 label.
 
+It also refuses when `REX_SERVER` is set to anything that doesn't start with
+`unix://`. A rex pane on this machine sets it to the local socket; a value
+that names another host would open the window on that machine, where the
+`-c` path doesn't exist and rex starts the lead in `$HOME`, with none of the
+app's guards. Every other value is refused rather than only the ones known
+to be remote, and an unset or empty `REX_SERVER` passes.
+
 ## `feature` opens one rex window per worktree
 
 The window is labelled with the worktree name, with the working directory
@@ -926,6 +933,14 @@ zsh alias set in the interactive configuration, and a block's command runs
 without that configuration. The lead block has no `--keep-open`, so it
 closes when Claude exits. `FeatureGuardTest`, "a worktree opens as one rex
 window", pins every argument of the five `rex` calls.
+
+`feature` refuses, before any window opens, when `wt` left no worktree on
+the new branch or left a path that is not a directory: rex starts a window
+whose `-c` directory is missing or empty in `$HOME`, which would start the
+lead outside the worktree and its guards. It also refuses when a `rex`
+reply holds no block ID (`block:...`) for the lead or the lazygit block,
+rather than pass an empty ID on as the next call's anchor, and it stops
+there under `set -e` with the layout partly built.
 
 ## `feature` doesn't start the app, and there is no devenv MCP
 
@@ -947,16 +962,19 @@ Rex passes a command as separate argument words, so the brief is simply the
 last word of the lead block's command:
 
 ```
-rex window new -s <session> <worktree> -c <path> --shell=none --json -- \
-  <direnv> exec <path> claude --remote-control --agent feature-lead -n <worktree> <brief>
+rex window new -s <session> <worktree> -c <path> --json -- \
+  direnv exec <path> claude --remote-control --agent feature-lead -n <worktree> <brief>
 ```
 
-`--shell=none` is what keeps a shell out of it: without it rex runs the
-command "through your login shell's environment", and the brief would pass
-through that shell. `<direnv>` is the path `command -v direnv` finds, because
-no shell is there to search `PATH`. The test "a brief reaches the claude
-argument list byte for byte" feeds a brief with `"`, `'`, `$`, a backtick,
-`;`, `|` and `\` and asserts it is `rex`'s last word, unchanged.
+Rex runs the command through the login shell's environment, and that login
+`PATH` is what finds `direnv` and `claude`, so the call leaves `--shell` at
+its default. The rex guide says to pass a command and its arguments "as
+separate words", which is how the brief stays one word through that shell;
+only a live launch proves that, so the test pins what `feature` hands to
+`rex`, not what rex does with it. "A brief reaches the claude argument list
+byte for byte" feeds briefs holding `"`, `'`, `$`, `${HOME}`, `$(id)`, a
+backtick, `;`, `|`, `&&`, `*` and `\` and asserts each is `rex`'s last word,
+unchanged.
 
 `--remote-control` takes an optional value, so written straight before the
 brief it would swallow the brief as the Remote Control session name and the
@@ -967,15 +985,21 @@ Claude reads a prompt starting with `!` as a shell command and one starting
 with `/` as a slash command, and now that the brief is an argument word
 Claude's own option parser reads a leading `-` as an option, so `feature`
 refuses a brief that starts with any of the three, after leading
-whitespace. It also refuses, before anything is created, a worktree name
+whitespace. The `-` refusal is a security check: a brief of
+`--dangerously-skip-permissions`, `--permission-mode=bypassPermissions`,
+`--settings={"disableAllHooks":true}` or `--add-dir=/` would otherwise start
+the lead with the guards off, and each has a test row. A `--` before the
+brief would end option parsing, but `claude --help` doesn't document it, so
+`feature` doesn't use it and keeps the refusal. It also refuses, before anything is created, a worktree name
 outside `^[a-z0-9][a-z0-9._-]*$` and one ending in `test` or `test-<N>`,
 which `database-names.nix` would refuse only after `wt switch --create` had
 made the worktree and branch.
 
 A control character in a brief is still refused, although an argument word
-can carry one: a brief is one line of text, and nothing a brief needs
-requires a newline, a carriage return or an escape. The refusal limits the
-input and is kept on purpose; rex itself would not stop it.
+can carry one. An escape or OSC sequence in a brief reaches Joey's terminal
+when Claude renders the prompt, and terminal sequences are input a brief
+never needs. A newline or carriage return is refused only because the rule is one line of
+plain text; nothing breaks if one gets through.
 
 ## `feature`'s control-character check on the brief needs `grep -z`
 
