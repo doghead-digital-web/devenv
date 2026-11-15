@@ -1,0 +1,71 @@
+{
+  "revision": 12,
+  "session_id": "session:harvst",
+  "label": "harvst",
+  "windows": [
+    {
+      "window_id": "window:w-main",
+      "label": "main",
+      "layers": [
+        {"layer_id": "layer:m1", "kind": "tiled", "blocks": [{"block_id": "block:b-main", "host_id": "host-1"}]}
+      ]
+    },
+    {
+      "window_id": "window:w5",
+      "label": "hrvst-1-merged",
+      "layers": [
+        {"layer_id": "layer:51", "kind": "tiled", "blocks": [{"block_id": "block:b5a", "host_id": "host-1"}]},
+        {"layer_id": "layer:52", "kind": "floating", "blocks": [{"block_id": "block:b5b", "host_id": "host-1"}]}
+      ]
+    },
+    {
+      "window_id": "window:w6",
+      "label": "hrvst-3-dirty",
+      "layers": [
+        {"layer_id": "layer:61", "kind": "tiled", "blocks": [{"block_id": "block:b6", "host_id": "host-1"}]}
+      ]
+    },
+    {
+      "window_id": "window:w7",
+      "label": "hrvst-3-dirty",
+      "layers": [
+        {"layer_id": "layer:71", "kind": "tiled", "blocks": [{"block_id": "block:b7", "host_id": "host-1"}]}
+      ]
+    },
+    {
+      "window_id": "window:w8",
+      "label": "hrvst-2-unmerged",
+      "layers": [
+        {"layer_id": "layer:81", "kind": "tiled", "blocks": [{"block_id": "block:b8a", "host_id": "host-1"}, {"block_id": "block:b8b", "host_id": "host-1"}]}
+      ]
+    },
+    {
+      "window_id": "window:w9",
+      "label": "hrvst-9-reverted",
+      "layers": [
+        {"layer_id": "layer:91", "kind": "tiled", "blocks": [{"block_id": "block:b9a", "host_id": "host-1"}, {"block_id": "block:b9b", "host_id": "host-2"}]}
+      ]
+    },
+    {
+      "window_id": "window:w10",
+      "label": "hrvst-10-squashed",
+      "layers": [
+        {"layer_id": "layer:101", "kind": "tiled", "blocks": [{"block_id": "block:b10", "host_id": "host-1"}]}
+      ]
+    },
+    {
+      "window_id": "window:w11",
+      "label": "hrvst-11-merge-commit",
+      "layers": [
+        {"layer_id": "layer:111", "kind": "tiled", "blocks": [{"block_id": "block:b11", "host_id": "host-1"}]}
+      ]
+    },
+    {
+      "window_id": "window:w12",
+      "label": "hrvst-12-ahead",
+      "layers": [
+        {"layer_id": "layer:121", "kind": "tiled", "blocks": [{"block_id": "block:b12", "host_id": "host-1"}]}
+      ]
+    }
+  ]
+}

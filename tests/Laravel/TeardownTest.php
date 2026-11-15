@@ -161,14 +161,44 @@ function worktreeFixture(): string
           *) echo "current branch is not part of a stack" >&2; exit 2 ;;
         esac
         SH, $fixtures));
-    writeStub($bin, 'herdr', sprintf(<<<'SH'
+    writeStub($bin, 'rex', str_replace(['__FIXTURES__', '__ROOT__'], [$fixtures, $root], <<<'SH'
+        if [ "$1" != "--autostart=false" ]; then echo "rex called without --autostart=false: $*" >&2; exit 1; fi
+        shift
+        [ -z "${REXSTUB_DOWN:-}" ] || { echo "rex: no server" >&2; exit 1; }
+        fx=__FIXTURES__
         case "$1 $2" in
-          "workspace list") cat %1$s/herdr-workspaces.json ;;
-          "tab list") if [ "$4" = wD ]; then cat %1$s/herdr-tabs.json; else echo '{"result":{"tabs":[]}}'; fi ;;
-          "pane list") sed "s#@ROOT@#%2$s#g" %1$s/herdr-panes.json ;;
-          *) echo "unexpected herdr $*" >&2; exit 1 ;;
+          "ls --json") cat "$fx/${REXSTUB_SESSIONS:-rex-sessions.json}" ;;
+          "whoami --json") echo '{"host_id":"host-1"}' ;;
+          "window ls")
+            [ -z "${REXSTUB_WINDOWS_FAIL:-}" ] || { echo "rex: window ls failed" >&2; exit 1; }
+            [ "$3 $4 $5" = "-s session:harvst --json" ] || { echo "unexpected rex $*" >&2; exit 1; }
+            file=rex-windows.json
+            if [ -n "${REXSTUB_STATE:-}" ] && [ -n "${REXSTUB_WINDOWS_AFTER:-}" ]; then
+              [ ! -f "$REXSTUB_STATE/windows" ] || file=$REXSTUB_WINDOWS_AFTER
+              : > "$REXSTUB_STATE/windows"
+            fi
+            cat "$fx/$file" ;;
+          "block inspect")
+            case "$3 $4" in
+              "block:self-main --json") echo '{"block":{"window_id":"window:w-main"}}' ;;
+              "block:self-w5 --json") echo '{"block":{"window_id":"window:w5"}}' ;;
+              *) echo "rex: no such block" >&2; exit 1 ;;
+            esac ;;
+          "block call")
+            [ "$3 $4 $5 $7" = "-s session:harvst -b process" ] || { echo "unexpected rex $*" >&2; exit 1; }
+            id=${6#block:}
+            file="$fx/rex-process-$id.json"
+            if [ -n "${REXSTUB_STATE:-}" ]; then
+              [ -z "${REXSTUB_PROCESS_AFTER:-}" ] || [ ! -f "$REXSTUB_STATE/$id" ] || [ ! -f "$fx/rex-process-$id-after.json" ] || file="$fx/rex-process-$id-after.json"
+              : > "$REXSTUB_STATE/$id"
+            fi
+            [ -f "$file" ] || { echo "rex: no such block" >&2; exit 1; }
+            sed "s#@ROOT@#__ROOT__#g" "$file" ;;
+          "window close")
+            printf '%s\n' "$*" >> "${REXSTUB_CLOSELOG:-/dev/null}" ;;
+          *) echo "unexpected rex $*" >&2; exit 1 ;;
         esac
-        SH, $fixtures, $root));
+        SH));
     writeStub($bin, 'wt', 'echo "unexpected wt $*" >&2; exit 1');
     writeTeardown($bin, $root.'/devenv.lock.build');
 
@@ -187,7 +217,7 @@ function runTeardown(array $arguments, string $from = 'main', array $environment
         ->env([
             ...isolatedGit(),
             'PATH' => $root.'/bin:'.getenv('PATH'),
-            'HERDR_TAB_ID' => 'wD:t1',
+            'REX_BLOCK' => 'block:self-main',
             ...$environment,
         ])
         ->run([$root.'/bin/teardown', ...$arguments]);
@@ -202,7 +232,7 @@ test('a dry run plans exactly the worktree, its merged branches and its own data
     expect($result->exitCode())->toBe(0)
         ->and($result->output())->toBe(implode("\n", [
             'Plan for hrvst-1-merged:',
-            '  close tab        wD:t5',
+            '  close tab        window:w5',
             '  stop process     101 php',
             '  stop process     102 node',
             "  remove worktree  {$root}/hrvst-1-merged",
@@ -228,7 +258,7 @@ test('a dry run counts a restacked stack whose rebased copies merged as merged b
     expect($result->exitCode())->toBe(0)
         ->and($result->output())->toBe(implode("\n", [
             'Plan for hrvst-8-stack:',
-            '  herdr tab        none',
+            '  rex tab          none',
             "  remove worktree  {$root}/hrvst-8-stack",
             "                   wt remove --foreground --no-hooks --no-delete-branch --reap -y {$root}/hrvst-8-stack",
             "  delete branch    hrvst-8-stack {$bottom} (merged into origin/main by patch)",
@@ -304,7 +334,7 @@ test('a dry run refuses what teardown must never remove', function (string $targ
     'a gh stack failure' => ['hrvst-7-gh-broken', 'main', 'gh stack view failed in hrvst-7-gh-broken'],
 ]);
 
-test('a forced dry run keeps unmerged branches and skips a tab with a pane outside the worktree', function (): void {
+test('a forced dry run keeps unmerged branches and skips a window with a block outside the worktree', function (): void {
     $root = worktreeFixture();
     $sha = mb_trim(fixtureGit($root.'/main', ['rev-parse', 'hrvst-2-unmerged']));
 
@@ -312,7 +342,7 @@ test('a forced dry run keeps unmerged branches and skips a tab with a pane outsi
 
     expect($result->exitCode())->toBe(0)
         ->and($result->output())
-        ->toContain("  herdr tab        skipped: pane wD:p9 is outside the worktree ({$root}/hrvst-2-unmerged-copy)")
+        ->toContain("  rex tab          skipped: block block:b8b is outside the worktree ({$root}/hrvst-2-unmerged-copy)")
         ->toContain('  process          105 nvim on ttys002 has a terminal: it must exit when the tab closes, or teardown stops there')
         ->toContain("wt remove --foreground --no-hooks --no-delete-branch --reap -y -f {$root}/hrvst-2-unmerged")
         ->toContain("  keep branch      hrvst-2-unmerged {$sha} (not merged into origin/main)")
@@ -320,22 +350,134 @@ test('a forced dry run keeps unmerged branches and skips a tab with a pane outsi
         ->not->toContain('delete branch');
 });
 
-test('a forced dry run says uncommitted changes are lost and skips a tab whose label is not unique', function (): void {
+test('a forced dry run says uncommitted changes are lost and skips a window whose label is not unique', function (): void {
     $result = runTeardown(['--dry-run', '--force', 'hrvst-3-dirty']);
 
     expect($result->exitCode())->toBe(0)
         ->and($result->output())
-        ->toContain('  herdr tab        skipped: more than one tab in harvst is labelled hrvst-3-dirty')
+        ->toContain('  rex tab          skipped: more than one window in harvst is labelled hrvst-3-dirty')
         ->toContain('  uncommitted changes in it are lost')
         ->toContain('  databases        none found');
 });
 
-test('a dry run never closes the tab it runs in', function (): void {
-    $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: ['HERDR_TAB_ID' => 'wD:t5']);
+test('a dry run never closes the window it runs in', function (): void {
+    $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: ['REX_BLOCK' => 'block:self-w5']);
 
     expect($result->exitCode())->toBe(0)
-        ->and($result->output())->toContain('  herdr tab        skipped: wD:t5 is the tab teardown runs in');
+        ->and($result->output())->toContain('  rex tab          skipped: window:w5 is the window teardown runs in');
 });
+
+test('a dry run skips the window when REX_BLOCK is set but its block cannot be inspected', function (): void {
+    $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: ['REX_BLOCK' => 'block:gone']);
+
+    expect($result->exitCode())->toBe(0)
+        ->and($result->output())->toContain("  rex tab          skipped: REX_BLOCK is set but rex can't inspect it, so teardown can't rule out its own window")
+        ->and($result->output())->not->toContain('close tab');
+});
+
+test('a dry run closes the window when REX_BLOCK is not set', function (): void {
+    $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: ['REX_BLOCK' => false]);
+
+    expect($result->exitCode())->toBe(0)
+        ->and($result->output())->toContain('  close tab        window:w5');
+});
+
+test('a dry run skips the window when rex has no session labelled harvst or is not answering', function (array $environment): void {
+    $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: $environment);
+
+    expect($result->exitCode())->toBe(0)
+        ->and($result->output())->toContain('  rex tab          none (no rex session labelled harvst, or rex is not answering)');
+})->with([
+    'no session carries the label' => [['REXSTUB_SESSIONS' => 'rex-sessions-none.json']],
+    'rex does not answer' => [['REXSTUB_DOWN' => '1']],
+]);
+
+test('a dry run skips the window when more than one rex session is labelled harvst', function (): void {
+    $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: ['REXSTUB_SESSIONS' => 'rex-sessions-two.json']);
+
+    expect($result->exitCode())->toBe(0)
+        ->and($result->output())->toContain('  rex tab          skipped: more than one rex session is labelled harvst');
+});
+
+test('a dry run refuses when rex cannot list the windows of the session it found', function (): void {
+    $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: ['REXSTUB_WINDOWS_FAIL' => '1']);
+
+    expect($result->exitCode())->toBe(1)
+        ->and($result->errorOutput())->toContain('teardown: refusing, rex window ls failed');
+});
+
+test('a dry run skips a window with a block that cannot be proven to be in the worktree', function (string $target, string $note): void {
+    $root = worktreeFixture();
+
+    $result = runTeardown(['--dry-run', '--force', $target]);
+
+    expect($result->exitCode())->toBe(0)
+        ->and($result->output())->toContain('  rex tab          skipped: '.str_replace('@ROOT@', $root, $note))
+        ->and($result->output())->not->toContain('close tab');
+})->with([
+    'a block that reports no working directory at all' => ['hrvst-10-squashed', 'block block:b10 reports no working directory'],
+    'a block on another host' => ['hrvst-9-reverted', 'block block:b9b is not on this host'],
+    'a block rex cannot read' => ['hrvst-11-merge-commit', 'rex could not read block block:b11'],
+    'a block whose login process is outside the worktree' => ['hrvst-12-ahead', 'block block:b12 is outside the worktree (@ROOT@/elsewhere)'],
+]);
+
+test('the teardown script no longer calls the old multiplexer', function (): void {
+    $script = (string) file_get_contents(worktreeFixture().'/bin/teardown');
+
+    expect(mb_strtolower($script))->not->toContain('her'.'dr');
+});
+
+/**
+ * @param  list<string>  $arguments
+ * @param  array<string, string|false>  $environment
+ */
+function runTeardownOnTerminal(array $arguments, array $environment): ProcessResult
+{
+    $root = worktreeFixture();
+    $state = $root.'/state-'.Str::lower(Str::random(8));
+    File::ensureDirectoryExists($state);
+
+    return Process::path($root.'/main')
+        ->env([
+            ...isolatedGit(),
+            'PATH' => $root.'/bin:'.getenv('PATH'),
+            'REX_BLOCK' => 'block:self-main',
+            'CLAUDECODE' => false,
+            'CLAUDE_CODE_ENTRYPOINT' => false,
+            'CLAUDE_PID' => false,
+            'AI_AGENT' => false,
+            'REXSTUB_STATE' => $state,
+            'REXSTUB_CLOSELOG' => $state.'/close.log',
+            ...$environment,
+        ])
+        ->run(['bash', '-c', '(sleep 1; printf "y\n"; sleep 2) | script -q /dev/null "$@"', 'bash', $root.'/bin/teardown', ...$arguments]);
+}
+
+test('a real run closes the planned window with rex window close, by its full ID', function (): void {
+    $root = worktreeFixture();
+    $log = $root.'/close-ok.log';
+    File::put($log, '');
+
+    $result = runTeardownOnTerminal(['hrvst-1-merged'], ['REXSTUB_CLOSELOG' => $log]);
+
+    expect(file_get_contents($log))->toBe("window close -s session:harvst window:w5\n")
+        ->and($result->output())->toContain('teardown: stopped, wt remove failed');
+})->skip(PHP_OS_FAMILY !== 'Darwin', 'needs the BSD script(1) for a pseudo-terminal');
+
+test('a real run closes nothing when the window changed after the plan', function (string $change, array $environment): void {
+    $root = worktreeFixture();
+    $log = $root.'/close-'.$change.'.log';
+    File::put($log, '');
+
+    $result = runTeardownOnTerminal(['hrvst-1-merged'], [...$environment, 'REXSTUB_CLOSELOG' => $log]);
+
+    expect(file_get_contents($log))->toBe('')
+        ->and($result->output())->toContain('window:w5 changed since the plan')
+        ->and($result->output())->toContain('teardown: stopped');
+})->with([
+    'a block was added' => ['grown', ['REXSTUB_WINDOWS_AFTER' => 'rex-windows-grown.json']],
+    'a block moved out of the worktree' => ['moved', ['REXSTUB_PROCESS_AFTER' => '1']],
+])->skip(PHP_OS_FAMILY !== 'Darwin', 'needs the BSD script(1) for a pseudo-terminal');
 
 test('a real run refuses when an agent may be running it', function (string $variable): void {
     $result = runTeardown(['hrvst-1-merged'], environment: [
