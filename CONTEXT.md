@@ -888,11 +888,11 @@ closed and the plan says why in its `rex tab` line, which otherwise reads
 and so does a session listed without an ID. The server must be this
 machine's: `REX_SERVER` set to anything but a `unix://` address, or a
 `rex whoami --json` endpoint that isn't one, skips the window, since another
-host's blocks and paths mean something else. Every rex call passes `--autostart=false`, because rex's default starts a
-missing local server, and "not answering" must stay a reason to skip rather
-than something `teardown` fixes. If rex answers for the session but `rex
-window ls` then fails, `teardown` refuses outright, as it did when herdr's
-tab list failed.
+host's blocks and paths mean something else. Every rex call passes
+`--autostart=false`, because rex's default starts a missing local server, and
+"not answering" must stay a reason to skip rather than something `teardown`
+fixes. If rex answers for the session but `rex window ls` then fails,
+`teardown` refuses outright, as it did when herdr's tab list failed.
 
 The window is the one whose label is the worktree name, and only when
 exactly one window carries it. It is skipped when it is the window of
@@ -916,8 +916,7 @@ The reply shapes the tests fake (`rex ls --json`, `rex window ls --json`,
 `rex block call process`, `rex block inspect --json`, `rex whoami --json`)
 were checked against a live rex on 2026-11-15: every field `teardown` reads
 is there, and `window ls --json` returns full IDs with the default
-`--short`. The
-fixtures use generic IDs and paths in those shapes.
+`--short`. The fixtures use generic IDs and paths in those shapes.
 
 After the `y` and before closing, `teardown` lists the windows again and
 repeats the whole check on the planned window. It closes only when the
