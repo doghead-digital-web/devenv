@@ -884,8 +884,11 @@ kill it.
 Closing the wrong window loses someone's work, so each condition fails
 closed and the plan says why in its `rex tab` line, which otherwise reads
 `close tab <window ID>`. The session is the one labelled `<appName>` in
-`rex ls --json`; none, or rex not answering, and more than one both skip.
-Every rex call passes `--autostart=false`, because rex's default starts a
+`rex ls --json`; none, or rex not answering, and more than one both skip,
+and so does a session listed without an ID. The server must be this
+machine's: `REX_SERVER` set to anything but a `unix://` address, or a
+`rex whoami --json` endpoint that isn't one, skips the window, since another
+host's blocks and paths mean something else. Every rex call passes `--autostart=false`, because rex's default starts a
 missing local server, and "not answering" must stay a reason to skip rather
 than something `teardown` fixes. If rex answers for the session but `rex
 window ls` then fails, `teardown` refuses outright, as it did when herdr's
@@ -903,8 +906,18 @@ must be the worktree or inside it. The directories are `foreground.cwd`,
 process`: a shell block's `login` ancestor reports none, a block started
 directly with a program has no ancestors, and an exited kept-open block has
 no foreground and reports none at all, so it skips with "reports no working
-directory". Each ID passed to rex comes from the JSON, never a label or a
-suffix, and an empty ID skips the window.
+directory". Each directory is compared with the worktree inside `jq`, as a
+whole string: a path holding a newline would otherwise split into lines that
+each look inside the worktree, so it counts as outside and the note shows
+the newline as `?`. Each ID passed to rex comes from the JSON, never a label
+or a suffix, and an empty ID skips the window.
+
+The reply shapes the tests fake (`rex ls --json`, `rex window ls --json`,
+`rex block call process`, `rex block inspect --json`, `rex whoami --json`)
+were checked against a live rex on 2026-11-15: every field `teardown` reads
+is there, and `window ls --json` returns full IDs with the default
+`--short`. The
+fixtures use generic IDs and paths in those shapes.
 
 After the `y` and before closing, `teardown` lists the windows again and
 repeats the whole check on the planned window. It closes only when the
