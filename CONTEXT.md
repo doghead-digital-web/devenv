@@ -890,17 +890,42 @@ name, and adopting the branch keeps the launcher unchanged. The stack's
 trunk stays `main`, so every layer's PR is based on `main` or the layer
 below it.
 
-## `feature` waits for each pane's shell before typing into it
+## `feature` no longer waits for each pane's shell
 
-`feature` opens three herdr panes in a new worktree, runs `lg` in one,
-starts the feature lead in another, and leaves the third as a shell. A
-pane's shell spends its first seconds loading the devenv environment
-through direnv, and keystrokes sent in that window are lost: the first
-version of the script left three idle shells. The script therefore waits
-for `direnv: export` in each pane first, and builds the shell once with
-`direnv exec` beforehand so that wait stays short. It looks up the herdr
-workspace labelled `<appName>`, and refuses rather than guess when no
-workspace or more than one carries that label.
+`feature` once opened three herdr panes and typed into each, so it waited
+for `direnv: export` in every pane first: a pane's shell spends its first
+seconds loading the devenv environment through direnv, and keystrokes sent
+in that window were lost. Under rex nothing is typed into a block. The lead
+and lazygit blocks start as `direnv exec <path> <program>`, so each program
+starts once direnv has loaded the environment, however long that takes, and
+the shell block has no command and loads direnv on entry like any shell.
+There is nothing left to wait for.
+
+The one `direnv exec <path> true` stays. It builds the devenv shell once
+before the blocks open, so the lead and lazygit blocks don't each build it
+at the same moment (`FeatureGuardTest`, "the direnv warm-up is the only
+direnv wait feature makes").
+
+`feature` looks up the rex session labelled `<appName>` in `rex ls --json`,
+and refuses rather than guess when no session or more than one carries that
+label.
+
+## `feature` opens one rex window per worktree
+
+The window is labelled with the worktree name, with the working directory
+set to the worktree, because `teardown` finds the window by that label. Its
+first block is the feature lead. `rex window new` takes no label for its
+block, so `feature` renames the lead block `lead-<worktree>` with `rex block
+rename`, and prints the block's full ID, which is how the chief of staff
+addresses the lead. A lazygit block splits to the right of the lead and a
+shell block below the lazygit block, both with `--focus=false`; the shell is
+where `devenv up` runs when a ticket needs the app.
+
+The lazygit block runs `direnv exec <path> lazygit`, never `lg`: `lg` is a
+zsh alias set in the interactive configuration, and a block's command runs
+without that configuration. The lead block has no `--keep-open`, so it
+closes when Claude exits. `FeatureGuardTest`, "a worktree opens as one rex
+window", pins every argument of the five `rex` calls.
 
 ## `feature` doesn't start the app, and there is no devenv MCP
 
@@ -908,32 +933,56 @@ Several worktrees run side by side, and each `devenv up` (Vite, php-fpm,
 the queue, the scheduler and pail) costs real memory on Joey's laptop. Four
 parallel stacks made it unusable, while most tickets are backend work that
 only needs MySQL, which runs outside `devenv up`. So `feature` leaves the
-third pane as a shell, and only work that needs the browser starts the app
+third block as a shell, and only work that needs the browser starts the app
 there, then stops it. For the same reason the MCP servers include no
 `devenv mcp`: every agent session starts its own copy of each server, and
 nothing used that one.
 
-## `feature` hands the brief to Claude as input, not as an argument
+## `feature` hands the brief to Claude as one argument word
 
-`herdr agent start` refuses agent arguments it cannot quote safely for the
-pane's shell (`invalid_agent_argument`), so a brief holding quotes, `$` or
-backticks failed the launch. The script starts Claude with no prompt and
-then sends the brief with `herdr agent prompt`, which types it into Claude
-rather than through a shell. Claude reads a message starting with `!` as a
-shell command and one starting with `/` as a slash command, and `herdr
-agent prompt` reads a leading `-` as an option and takes no `--`, so
-`feature` refuses a brief that starts with any of the three, after leading
+Under herdr the launch failed on a brief holding quotes, `$` or backticks,
+because herdr could not quote an agent argument safely for the pane's
+shell, so the script started Claude bare and typed the brief in afterwards.
+Rex passes a command as separate argument words, so the brief is simply the
+last word of the lead block's command:
+
+```
+rex window new -s <session> <worktree> -c <path> --shell=none --json -- \
+  <direnv> exec <path> claude --remote-control --agent feature-lead -n <worktree> <brief>
+```
+
+`--shell=none` is what keeps a shell out of it: without it rex runs the
+command "through your login shell's environment", and the brief would pass
+through that shell. `<direnv>` is the path `command -v direnv` finds, because
+no shell is there to search `PATH`. The test "a brief reaches the claude
+argument list byte for byte" feeds a brief with `"`, `'`, `$`, a backtick,
+`;`, `|` and `\` and asserts it is `rex`'s last word, unchanged.
+
+`--remote-control` takes an optional value, so written straight before the
+brief it would swallow the brief as the Remote Control session name and the
+lead would start with no prompt. It comes first, ahead of another option,
+and the same test asserts the word before the brief is the worktree name.
+
+Claude reads a prompt starting with `!` as a shell command and one starting
+with `/` as a slash command, and now that the brief is an argument word
+Claude's own option parser reads a leading `-` as an option, so `feature`
+refuses a brief that starts with any of the three, after leading
 whitespace. It also refuses, before anything is created, a worktree name
 outside `^[a-z0-9][a-z0-9._-]*$` and one ending in `test` or `test-<N>`,
 which `database-names.nix` would refuse only after `wt switch --create` had
 made the worktree and branch.
+
+A control character in a brief is still refused, although an argument word
+can carry one: a brief is one line of text, and nothing a brief needs
+requires a newline, a carriage return or an escape. The refusal limits the
+input and is kept on purpose; rex itself would not stop it.
 
 ## `feature`'s control-character check on the brief needs `grep -z`
 
 `grep`'s `[[:cntrl:]]` class never sees a bare newline inside its input,
 because grep treats a newline as the boundary between two lines to search,
 never as a character one of those lines could contain. A brief holding an
-embedded newline passed the plain check and reached `herdr agent prompt`
+embedded newline passed the plain check and reached the launch
 unrefused; `grep -z` instead treats the whole input as one NUL-terminated
 record, so an embedded `\n` shows up as ordinary content within it. `\r`
 and `\x1b` were caught either way, since neither one is grep's line
