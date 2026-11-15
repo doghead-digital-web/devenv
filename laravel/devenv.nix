@@ -27,7 +27,7 @@ in
       description = ''
         The app's short name. It names the databases (`<appName>_<worktree>`),
         the hosts (`<worktree>.<appName>.test`), the Caddy sites, the RustFS
-        bucket and the herdr workspace `feature` and `teardown` look for.
+        bucket and the rex session `feature` and `teardown` look for.
       '';
       example = "harvst";
     };

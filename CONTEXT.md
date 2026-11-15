@@ -387,7 +387,7 @@ does name it.
 Everything else that names the word is blocked, multi-line or not: an
 inline `-m`, `--body` or `--title` value, a heredoc, an `echo`, `cat`,
 `grep`, `git log` or `git grep`, a name passed inside a quoted argument to
-another program (`herdr pane send-text`, `python3 -c`, `perl -e`, a git
+another program (`rex send`, `python3 -c`, `perl -e`, a git
 alias), and a name fed to a shell through a pipe, `<<<` or `<(…)`. Two
 earlier versions allowed more. The first blocked `teardown` only in command
 position, and security's review ran plain teardowns past it: a redirect
@@ -468,8 +468,14 @@ dropping a word from the trigger turns that word's rows red.
 Out of scope, not this hook's job: stopping MySQL or an app some other way
 (`mysqladmin shutdown`, `brew services stop`, `launchctl kill` or
 `bootout`, `osascript … quit`); `devenv processes down` or
-`process-compose down` run against another worktree's root; and `herdr`
-pane, tab or agent control of another worktree.
+`process-compose down` run against another worktree's root; and rex
+control of another worktree's blocks. Typing into another pane, with `rex
+send` in pieces so no single command names the word, or `rex block call ...
+write`, and closing another worktree's window or block with `rex
+window close` or `rex block close`, get past these word guards, as herdr's
+pane and tab commands did. An agent that can run `rex` can reach every
+session on the server; only the cwd and block checks in `teardown` and the
+launch checks in `feature` limit what those two scripts touch.
 
 ## Agents publish branches and draft PRs, and Joey merges
 
@@ -1453,7 +1459,7 @@ state check that refuses when a protected file differs from `main`, at the
 builder's `TaskCompleted` and in `ci`, is what closes this class; a
 name-based hook, however wide its trigger, cannot. Separately: an inline
 suppression (`@phpstan-ignore`, `eslint-disable`, Pest's `->skip()`) or a
-nested agent (`claude --bare -p`, `herdr pane run`) bypasses the hook
+nested agent (`claude --bare -p`, `rex run`) bypasses the hook
 entirely. `.npmrc` and `pnpm-workspace.yaml` are not on the list, since
 dependency work edits them; a `script-shell` or `scriptShell` setting in
 either can still make the locked `pnpm` scripts exit 0, and HRVST-222 locks
