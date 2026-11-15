@@ -405,10 +405,10 @@ test('a dry run refuses when rex cannot list the windows of the session it found
         ->and($result->errorOutput())->toContain('teardown: refusing, rex window ls failed');
 });
 
-test('a dry run skips a window with a block that cannot be proven to be in the worktree', function (string $target, string $note): void {
+test('a dry run skips a window with a block that cannot be proven to be in the worktree', function (string $target, string $note, array $environment = []): void {
     $root = worktreeFixture();
 
-    $result = runTeardown(['--dry-run', '--force', $target]);
+    $result = runTeardown(['--dry-run', '--force', $target], environment: $environment);
 
     expect($result->exitCode())->toBe(0)
         ->and($result->output())->toContain('  rex tab          skipped: '.str_replace('@ROOT@', $root, $note))
@@ -417,8 +417,29 @@ test('a dry run skips a window with a block that cannot be proven to be in the w
     'a block that reports no working directory at all' => ['hrvst-10-squashed', 'block block:b10 reports no working directory'],
     'a block on another host' => ['hrvst-9-reverted', 'block block:b9b is not on this host'],
     'a block rex cannot read' => ['hrvst-11-merge-commit', 'rex could not read block block:b11'],
-    'a block whose login process is outside the worktree' => ['hrvst-12-ahead', 'block block:b12 is outside the worktree (@ROOT@/elsewhere)'],
+    'a block whose child process is outside the worktree' => ['hrvst-12-ahead', 'block block:b12 is outside the worktree (@ROOT@/elsewhere)'],
+    'a block whose ancestor process is outside the worktree' => ['hrvst-12-ahead', 'block block:b12a is outside the worktree (@ROOT@/elsewhere)', ['REXSTUB_WINDOWS' => 'rex-windows-hostile.json']],
+    'a block whose working directory holds two lines that each look inside' => ['hrvst-11-merge-commit', 'block block:b11n is outside the worktree (@ROOT@/hrvst-11-merge-commit?@ROOT@/hrvst-11-merge-commit)', ['REXSTUB_WINDOWS' => 'rex-windows-hostile.json']],
 ]);
+
+test('a dry run skips the window when rex is connected to a server that is not on this machine', function (array $environment): void {
+    $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: ['REX_BLOCK' => false, ...$environment]);
+
+    expect($result->exitCode())->toBe(0)
+        ->and($result->output())->toContain('  rex tab          skipped: rex is connected to a server that is not on this machine')
+        ->and($result->output())->not->toContain('close tab');
+})->with([
+    'whoami reports a tcp endpoint' => [['REXSTUB_WHOAMI' => 'rex-whoami-remote.json']],
+    'REX_SERVER names another host' => [['REX_SERVER' => 'devbox']],
+]);
+
+test('a dry run skips the tab when rex lists the session without an ID', function (): void {
+    $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: ['REXSTUB_SESSIONS' => 'rex-sessions-no-id.json']);
+
+    expect($result->exitCode())->toBe(0)
+        ->and($result->output())->toContain('  rex tab          skipped: rex listed the session without an ID')
+        ->and($result->output())->not->toContain('close tab');
+});
 
 test('a dry run skips a window or a block that rex lists without an ID', function (string $listing, string $note): void {
     $result = runTeardown(['--dry-run', 'hrvst-1-merged'], environment: ['REXSTUB_WINDOWS' => $listing]);

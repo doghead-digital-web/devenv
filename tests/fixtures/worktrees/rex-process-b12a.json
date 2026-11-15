@@ -1,0 +1,1 @@
+{"last_exit":null,"child":{"pid":1090,"user_id":0,"name":"login"},"foreground":{"pid":1093,"user_id":501,"name":"claude","cwd":"@ROOT@/hrvst-12-ahead"},"ancestors":[{"pid":1092,"user_id":501,"name":"zsh","cwd":"@ROOT@/elsewhere"},{"pid":1090,"user_id":0,"name":"login"}],"home":"/home/user"}

@@ -200,11 +200,17 @@
   }
 
   check_window() {
-    local listing=$1 window=$2 host blocks block block_host process cwds cwd
+    local listing=$1 window=$2 identity host endpoint blocks block block_host process verdict
     check_problem=
     check_blocks=
-    host=$(rex_call whoami --json 2>/dev/null | ${jq} -r '.host_id // empty' 2>/dev/null || true)
+    identity=$(rex_call whoami --json 2>/dev/null) || identity=
+    host=$(printf '%s' "$identity" | ${jq} -r '.host_id // empty' 2>/dev/null || true)
     if [ -z "$host" ]; then check_problem="rex does not report this host's ID"; return; fi
+    endpoint=$(printf '%s' "$identity" | ${jq} -r '.endpoint // empty' 2>/dev/null || true)
+    case "$endpoint" in
+      unix://*) ;;
+      *) check_problem="rex is connected to a server that is not on this machine"; return ;;
+    esac
     blocks=$(printf '%s' "$listing" | ${jq} -r --arg window "$window" '
       .windows[] | select(.window_id == $window) | .layers[]?.blocks[]? | "\(.block_id // "")\u001f\(.host_id // "")"
     ' 2>/dev/null) || { check_problem="rex listed the window in a shape teardown can't read"; return; }
@@ -213,11 +219,19 @@
       if [ -z "$block" ]; then check_problem="rex lists a block with no ID in $window"; return; fi
       if [ "$block_host" != "$host" ]; then check_problem="block $block is not on this host"; return; fi
       process=$(rex_call block call -s "$session" -b "$block" process 2>/dev/null) || { check_problem="rex could not read block $block"; return; }
-      cwds=$(printf '%s' "$process" | ${jq} -r '[.foreground.cwd, .child.cwd, .ancestors[]?.cwd] | map(select(. != null and . != "")) | .[]' 2>/dev/null) || { check_problem="rex could not read block $block"; return; }
-      if [ -z "$cwds" ]; then check_problem="block $block reports no working directory"; return; fi
-      while IFS= read -r cwd; do
-        if [ "$cwd" != "$path" ] && [[ "$cwd" != "$path"/* ]]; then check_problem="block $block is outside the worktree ($cwd)"; return; fi
-      done <<<"$cwds"
+      verdict=$(printf '%s' "$process" | ${jq} -r --arg path "$path" '
+        [.foreground.cwd, .child.cwd, .ancestors[]?.cwd] | map(select(. != null and . != "")) as $cwds
+        | if ($cwds | length) == 0 then "none"
+          else ($cwds | map(select(. != $path and (startswith($path + "/") | not))) | first) as $outside
+            | if $outside == null then "inside" else "outside " + ($outside | gsub("[\n\r]"; "?")) end
+          end
+      ' 2>/dev/null) || { check_problem="rex could not read block $block"; return; }
+      case "$verdict" in
+        inside) ;;
+        none) check_problem="block $block reports no working directory"; return ;;
+        "outside "*) check_problem="block $block is outside the worktree (''${verdict#outside })"; return ;;
+        *) check_problem="rex could not read block $block"; return ;;
+      esac
       check_blocks+="$block"$'\n'
     done <<<"$blocks"
     check_blocks=$(printf '%s' "$check_blocks" | LC_ALL=C sort)
@@ -227,14 +241,20 @@
   tab_note=
   planned_blocks=
   session=
-  session_ids=$(rex_call ls --json 2>/dev/null | ${jq} -r '.sessions[] | select(.label == "${appName}") | .session_id' 2>/dev/null || true)
-  session_count=$(printf '%s\n' "$session_ids" | ${grep} -c . || true)
-  if [ "$session_count" -eq 0 ]; then
+  sessions=
+  case "''${REX_SERVER:-}" in
+    "" | unix://*) sessions=$(rex_call ls --json 2>/dev/null || true) ;;
+  esac
+  session_count=$(printf '%s' "$sessions" | ${jq} -r '[.sessions[] | select(.label == "${appName}")] | length' 2>/dev/null || true)
+  if ! [[ "''${REX_SERVER:-unix://}" == unix://* ]]; then
+    tab_note="skipped: rex is connected to a server that is not on this machine"
+  elif [ "''${session_count:-0}" -eq 0 ]; then
     tab_note="none (no rex session labelled ${appName}, or rex is not answering)"
   elif [ "$session_count" -gt 1 ]; then
     tab_note="skipped: more than one rex session is labelled ${appName}"
+  elif ! session=$(printf '%s' "$sessions" | ${jq} -r '.sessions[] | select(.label == "${appName}") | .session_id // empty') || [ -z "$session" ]; then
+    tab_note="skipped: rex listed the session without an ID"
   else
-    session=$session_ids
     listing=$(rex_call window ls -s "$session" --json) || refuse "rex window ls failed"
     window_count=$(printf '%s' "$listing" | ${jq} -r --arg label "$target" '[.windows[] | select(.label == $label)] | length') ||
       refuse "rex window ls printed something that is not a window list"
