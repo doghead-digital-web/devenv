@@ -95,7 +95,7 @@ test('the hook blocks an agent from running teardown and says to hand the comman
     'through setsid' => ['setsid teardown x'],
     'through flock' => ['flock /tmp/lock teardown x'],
     'through nix develop' => ['nix develop -c teardown x'],
-    'typed into another pane' => ["herdr pane send-text p1 'teardown x'"],
+    'typed into another pane' => ["rex send -b p1 'teardown x'"],
     'run under a pty' => ["python3 -c 'import pty; pty.spawn([\"teardown\", \"x\"])'"],
     'an echo piped to a shell' => ['echo teardown x | sh'],
     'a fd exec' => ['fd -x teardown'],
