@@ -822,7 +822,7 @@ approve from inside the session.
 
 ## `teardown` is not a `pre-remove` hook, and gives `wt remove` a path only
 
-`teardown <worktree>` removes what `feature` set up: the herdr tab, what
+`teardown <worktree>` removes what `feature` set up: the rex window, what
 still runs in the worktree, the worktree, its merged branches and its
 databases. It is a devenv script that calls `wt remove`, not a worktrunk
 `pre-remove` hook, because a hook would run on every `wt remove`, an
@@ -873,12 +873,47 @@ anywhere.
 
 `--reap` leaves alone any process with a controlling terminal, such as
 `devenv up` in a pane, an editor or a Claude session. `teardown` closes the
-worktree's herdr tab first, only when it is the one tab in the herdr
-workspace labelled `<appName>` with that label, is not the tab `teardown`
-runs in, and every pane in it sits in the worktree. It then checks once a
-second, for up to ten seconds, for a process with a terminal whose cwd is in
-the worktree, since the tab's shells take a moment to exit. If one is still
-there, it stops and names it rather than kill it.
+worktree's rex window first, with `rex window close -s <session> <window
+ID>`, and checks once a second, for up to ten seconds, for a process with a
+terminal whose cwd is in the worktree, since the window's shells take a
+moment to exit. If one is still there, it stops and names it rather than
+kill it.
+
+## `teardown` closes a rex window only when it can prove every block is in the worktree
+
+Closing the wrong window loses someone's work, so each condition fails
+closed and the plan says why in its `rex tab` line, which otherwise reads
+`close tab <window ID>`. The session is the one labelled `<appName>` in
+`rex ls --json`; none, or rex not answering, and more than one both skip.
+Every rex call passes `--autostart=false`, because rex's default starts a
+missing local server, and "not answering" must stay a reason to skip rather
+than something `teardown` fixes. If rex answers for the session but `rex
+window ls` then fails, `teardown` refuses outright, as it did when herdr's
+tab list failed.
+
+The window is the one whose label is the worktree name, and only when
+exactly one window carries it. It is skipped when it is the window of
+`$REX_BLOCK`, read with `rex block inspect "$REX_BLOCK" --json`; when
+`REX_BLOCK` is set but cannot be inspected, `teardown` can't prove the
+window isn't its own, so it skips that too. Every block in every layer of
+the window must be on this host (`host_id` against `rex whoami --json`),
+must report at least one working directory, and every directory it reports
+must be the worktree or inside it. The directories are `foreground.cwd`,
+`child.cwd` and each `ancestors[].cwd` that is present from `rex block call
+process`: a shell block's `login` ancestor reports none, a block started
+directly with a program has no ancestors, and an exited kept-open block has
+no foreground and reports none at all, so it skips with "reports no working
+directory". Each ID passed to rex comes from the JSON, never a label or a
+suffix, and an empty ID skips the window.
+
+After the `y` and before closing, `teardown` lists the windows again and
+repeats the whole check on the planned window. It closes only when the
+window's block IDs are exactly the planned set and every block passes
+again, otherwise it stops with the window open: a block added, or a shell
+`cd`'d elsewhere, between the plan and the answer is not covered by what the
+person approved. `TeardownTest` pins each skip reason in the dry run and,
+through `script(1)` for a terminal, the close command and both ways the
+second check refuses.
 
 ## A feature's stack grows from the worktree's branch
 
