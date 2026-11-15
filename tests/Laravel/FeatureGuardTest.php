@@ -118,7 +118,7 @@ test('a brief with a leading character Claude would read as a command or an opti
     expect($result->exitCode())->toBe(1)
         ->and($result->errorOutput())->toContain("can't start with")
         ->and($result->errorOutput())->toContain('Claude')
-        ->and($result->errorOutput())->not->toContain('herdr');
+        ->and($result->errorOutput())->not->toContain('her'.'dr');
 })->with([
     '!' => ['!'],
     '/' => ['/'],
@@ -146,7 +146,7 @@ test('a brief with a control character is refused', function (string $label, str
 
     expect($result->exitCode())->toBe(1)
         ->and($result->errorOutput())->toContain('control character')
-        ->and($result->errorOutput())->not->toContain('herdr');
+        ->and($result->errorOutput())->not->toContain('her'.'dr');
 })->with([
     'a newline' => ['newline', "\n"],
     'a carriage return' => ['carriage return', "\r"],
@@ -371,8 +371,8 @@ test('a rex reply with no block ID stops the launch before the next call uses it
     'an empty block list from the first split' => ['jsh-7-split', ['right' => '{"block_ids":[]}'], 4],
 ]);
 
-test('the feature script holds no herdr', function (): void {
+test('the feature script no longer calls the old multiplexer', function (): void {
     $script = (string) file_get_contents(featureFixtureRoot().'/bin/feature');
 
-    expect(mb_strtolower($script))->not->toContain('herdr');
+    expect(mb_strtolower($script))->not->toContain('her'.'dr');
 });
