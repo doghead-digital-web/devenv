@@ -168,7 +168,7 @@ function worktreeFixture(): string
         fx=__FIXTURES__
         case "$1 $2" in
           "ls --json") cat "$fx/${REXSTUB_SESSIONS:-rex-sessions.json}" ;;
-          "whoami --json") echo '{"host_id":"host-1"}' ;;
+          "whoami --json") cat "$fx/${REXSTUB_WHOAMI:-rex-whoami.json}" ;;
           "window ls")
             [ -z "${REXSTUB_WINDOWS_FAIL:-}" ] || { echo "rex: window ls failed" >&2; exit 1; }
             [ "$3 $4 $5" = "-s session:harvst --json" ] || { echo "unexpected rex $*" >&2; exit 1; }
@@ -179,11 +179,9 @@ function worktreeFixture(): string
             fi
             cat "$fx/$file" ;;
           "block inspect")
-            case "$3 $4" in
-              "block:self-main --json") echo '{"block":{"window_id":"window:w-main"}}' ;;
-              "block:self-w5 --json") echo '{"block":{"window_id":"window:w5"}}' ;;
-              *) echo "rex: no such block" >&2; exit 1 ;;
-            esac ;;
+            [ "$4" = "--json" ] || { echo "unexpected rex $*" >&2; exit 1; }
+            [ -f "$fx/rex-inspect-${3#block:}.json" ] || { echo "rex: no such block" >&2; exit 1; }
+            cat "$fx/rex-inspect-${3#block:}.json" ;;
           "block call")
             [ "$3 $4 $5 $7" = "-s session:harvst -b process" ] || { echo "unexpected rex $*" >&2; exit 1; }
             id=${6#block:}
@@ -218,6 +216,7 @@ function runTeardown(array $arguments, string $from = 'main', array $environment
             ...isolatedGit(),
             'PATH' => $root.'/bin:'.getenv('PATH'),
             'REX_BLOCK' => 'block:self-main',
+            'REX_SERVER' => false,
             ...$environment,
         ])
         ->run([$root.'/bin/teardown', ...$arguments]);
@@ -453,6 +452,7 @@ function runTeardownOnTerminal(array $arguments, array $environment): ProcessRes
             ...isolatedGit(),
             'PATH' => $root.'/bin:'.getenv('PATH'),
             'REX_BLOCK' => 'block:self-main',
+            'REX_SERVER' => false,
             'CLAUDECODE' => false,
             'CLAUDE_CODE_ENTRYPOINT' => false,
             'CLAUDE_PID' => false,

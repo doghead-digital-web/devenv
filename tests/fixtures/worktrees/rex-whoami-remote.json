@@ -1,0 +1,14 @@
+{
+  "principal": {"kind": "peer", "transport": "tcp", "display": "user@devbox"},
+  "account": "user",
+  "endpoint": "tcp://devbox:7000",
+  "pid": 200,
+  "instance_id": "instance-2",
+  "host_id": "host-1",
+  "started_at": "2026-01-01T00:00:00.000000Z",
+  "rex_version": "0.0.0",
+  "api_revision": 11,
+  "exit_empty": false,
+  "session_count": 2,
+  "tailscale": {"state": "off"}
+}

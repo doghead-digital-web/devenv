@@ -1,0 +1,17 @@
+{
+  "principal": {"kind": "peer", "transport": "unix", "display": "uid 501", "uid": 501, "gid": 20, "pid": 100},
+  "account": "user",
+  "endpoint": "unix:///tmp/rex-fixture/server.sock",
+  "pid": 200,
+  "instance_id": "instance-1",
+  "host_id": "host-1",
+  "started_at": "2026-01-01T00:00:00.000000Z",
+  "rex_version": "0.0.0",
+  "api_revision": 11,
+  "exit_empty": false,
+  "session_count": 2,
+  "tailscale": {"state": "off"},
+  "session_id": "session:harvst",
+  "window_id": "window:w-main",
+  "block_id": "block:self-main"
+}
