@@ -23,10 +23,10 @@ let
   );
 in
 {
-  scripts.feature.description = "Open a worktree for a feature in a new herdr tab: its feature lead, lazygit and a shell for devenv up";
+  scripts.feature.description = "Open a worktree for a feature in a new rex window: its feature lead, lazygit and a shell for devenv up";
   scripts.feature.exec = import ./scripts/feature.nix tools;
 
-  scripts.teardown.description = "Undo what feature set up for a worktree: its herdr tab, processes, worktree, merged branches and databases";
+  scripts.teardown.description = "Undo what feature set up for a worktree: its rex window, processes, worktree, merged branches and databases";
   scripts.teardown.exec = import ./scripts/teardown.nix (
     tools
     // {

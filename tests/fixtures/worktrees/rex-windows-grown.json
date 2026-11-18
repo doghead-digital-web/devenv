@@ -1,0 +1,15 @@
+{
+  "revision": 13,
+  "session_id": "session:harvst",
+  "label": "harvst",
+  "windows": [
+    {
+      "window_id": "window:w5",
+      "label": "hrvst-1-merged",
+      "layers": [
+        {"layer_id": "layer:51", "kind": "tiled", "blocks": [{"block_id": "block:b5a", "host_id": "host-1"}, {"block_id": "block:b5c", "host_id": "host-1"}]},
+        {"layer_id": "layer:52", "kind": "floating", "blocks": [{"block_id": "block:b5b", "host_id": "host-1"}]}
+      ]
+    }
+  ]
+}

@@ -387,7 +387,7 @@ does name it.
 Everything else that names the word is blocked, multi-line or not: an
 inline `-m`, `--body` or `--title` value, a heredoc, an `echo`, `cat`,
 `grep`, `git log` or `git grep`, a name passed inside a quoted argument to
-another program (`herdr pane send-text`, `python3 -c`, `perl -e`, a git
+another program (`rex send`, `python3 -c`, `perl -e`, a git
 alias), and a name fed to a shell through a pipe, `<<<` or `<(…)`. Two
 earlier versions allowed more. The first blocked `teardown` only in command
 position, and security's review ran plain teardowns past it: a redirect
@@ -468,8 +468,14 @@ dropping a word from the trigger turns that word's rows red.
 Out of scope, not this hook's job: stopping MySQL or an app some other way
 (`mysqladmin shutdown`, `brew services stop`, `launchctl kill` or
 `bootout`, `osascript … quit`); `devenv processes down` or
-`process-compose down` run against another worktree's root; and `herdr`
-pane, tab or agent control of another worktree.
+`process-compose down` run against another worktree's root; and rex
+control of another worktree's blocks. Typing into another pane, with `rex
+send` in pieces so no single command names the word, or `rex block call ...
+write`, and closing another worktree's window or block with `rex
+window close` or `rex block close`, get past these word guards, as herdr's
+pane and tab commands did. An agent that can run `rex` can reach every
+session on the server; only the cwd and block checks in `teardown` and the
+launch checks in `feature` limit what those two scripts touch.
 
 ## Agents publish branches and draft PRs, and Joey merges
 
@@ -822,7 +828,7 @@ approve from inside the session.
 
 ## `teardown` is not a `pre-remove` hook, and gives `wt remove` a path only
 
-`teardown <worktree>` removes what `feature` set up: the herdr tab, what
+`teardown <worktree>` removes what `feature` set up: the rex window, what
 still runs in the worktree, the worktree, its merged branches and its
 databases. It is a devenv script that calls `wt remove`, not a worktrunk
 `pre-remove` hook, because a hook would run on every `wt remove`, an
@@ -873,12 +879,66 @@ anywhere.
 
 `--reap` leaves alone any process with a controlling terminal, such as
 `devenv up` in a pane, an editor or a Claude session. `teardown` closes the
-worktree's herdr tab first, only when it is the one tab in the herdr
-workspace labelled `<appName>` with that label, is not the tab `teardown`
-runs in, and every pane in it sits in the worktree. It then checks once a
-second, for up to ten seconds, for a process with a terminal whose cwd is in
-the worktree, since the tab's shells take a moment to exit. If one is still
-there, it stops and names it rather than kill it.
+worktree's rex window first, with `rex window close -s <session> <window
+ID>`, and checks once a second, for up to ten seconds, for a process with a
+terminal whose cwd is in the worktree, since the window's shells take a
+moment to exit. If one is still there, it stops and names it rather than
+kill it.
+
+## `teardown` closes a rex window only when it can prove every block is in the worktree
+
+Closing the wrong window loses someone's work, so each condition fails
+closed and the plan says why in its `rex tab` line, which otherwise reads
+`close tab <window ID>`. The session is the one labelled `<appName>` in
+`rex ls --json`; none, or rex not answering, and more than one both skip,
+and so does a session listed without an ID. The server must be this
+machine's: `REX_SERVER` set to anything but a `unix://` address, or a
+`rex whoami --json` endpoint that isn't one, skips the window, since another
+host's blocks and paths mean something else. Every rex call passes
+`--autostart=false`, because rex's default starts a missing local server, and
+"not answering" must stay a reason to skip rather than something `teardown`
+fixes. If rex answers for the session but `rex window ls` then fails,
+`teardown` refuses outright, as it did when herdr's tab list failed.
+
+The window is the one whose label is the worktree name, and only when
+exactly one window carries it. It is skipped when it is the window of
+`$REX_BLOCK`, read with `rex block inspect "$REX_BLOCK" --json`; when
+`REX_BLOCK` is set but cannot be inspected, `teardown` can't prove the
+window isn't its own, so it skips that too. Every block in every layer of
+the window must be on this host (`host_id` against `rex whoami --json`),
+must report at least one working directory, and every directory it reports
+must be the worktree or inside it. The directories are `foreground.cwd`,
+`child.cwd` and each `ancestors[].cwd` that is present from `rex block call
+process`: a shell block's `login` ancestor reports none, a block started
+directly with a program has no ancestors, and an exited kept-open block has
+no foreground and reports none at all, so it skips with "reports no working
+directory". Each directory is compared with the worktree inside `jq`, as a
+whole string: a path holding a newline would otherwise split into lines that
+each look inside the worktree, so it counts as outside. The note prints
+the path with every control character (C0, DEL and C1) shown as `?`, since
+a working directory is whatever a process in the block chose and an escape
+sequence in it would otherwise repaint the plan before Joey answers. Each
+ID passed to rex comes from the JSON, never a label or a suffix, and an
+empty ID skips the window.
+
+The reply shapes the tests fake (`rex ls --json`, `rex window ls --json`,
+`rex block call process`, `rex block inspect --json`, `rex whoami --json`)
+were checked against a live rex on 2026-11-15: every field `teardown` reads
+is there, and `window ls --json` returns full IDs with the default
+`--short`. The fixtures use generic IDs and paths in those shapes. The
+remote `whoami` fixture (a `tcp://` endpoint) is constructed, not captured:
+only a local server was available, so what a remote server reports there is
+an assumption, and the check treats any endpoint that isn't `unix://` as
+remote.
+
+After the `y` and before closing, `teardown` lists the windows again and
+repeats the whole check on the planned window. It closes only when the
+window's block IDs are exactly the planned set and every block passes
+again, otherwise it stops with the window open: a block added, or a shell
+`cd`'d elsewhere, between the plan and the answer is not covered by what the
+person approved. `TeardownTest` pins each skip reason in the dry run and,
+through `script(1)` for a terminal, the close command and both ways the
+second check refuses.
 
 ## A feature's stack grows from the worktree's branch
 
@@ -890,17 +950,57 @@ name, and adopting the branch keeps the launcher unchanged. The stack's
 trunk stays `main`, so every layer's PR is based on `main` or the layer
 below it.
 
-## `feature` waits for each pane's shell before typing into it
+## `feature` no longer waits for each pane's shell
 
-`feature` opens three herdr panes in a new worktree, runs `lg` in one,
-starts the feature lead in another, and leaves the third as a shell. A
-pane's shell spends its first seconds loading the devenv environment
-through direnv, and keystrokes sent in that window are lost: the first
-version of the script left three idle shells. The script therefore waits
-for `direnv: export` in each pane first, and builds the shell once with
-`direnv exec` beforehand so that wait stays short. It looks up the herdr
-workspace labelled `<appName>`, and refuses rather than guess when no
-workspace or more than one carries that label.
+`feature` once opened three herdr panes and typed into each, so it waited
+for `direnv: export` in every pane first: a pane's shell spends its first
+seconds loading the devenv environment through direnv, and keystrokes sent
+in that window were lost. Under rex nothing is typed into a block. The lead
+and lazygit blocks start as `direnv exec <path> <program>`, so each program
+starts once direnv has loaded the environment, however long that takes, and
+the shell block has no command and loads direnv on entry like any shell.
+There is nothing left to wait for.
+
+The one `direnv exec <path> true` stays. It builds the devenv shell once
+before the blocks open, so the lead and lazygit blocks don't each build it
+at the same moment (`FeatureGuardTest`, "the direnv warm-up is the only
+direnv wait feature makes").
+
+`feature` looks up the rex session labelled `<appName>` in `rex ls --json`,
+and refuses rather than guess when no session or more than one carries that
+label.
+
+It also refuses when `REX_SERVER` is set to anything that doesn't start with
+`unix://`. A rex pane on this machine sets it to the local socket; a value
+that names another host would open the window on that machine, where the
+`-c` path doesn't exist and rex starts the lead in `$HOME`, with none of the
+app's guards. Every other value is refused rather than only the ones known
+to be remote, and an unset or empty `REX_SERVER` passes.
+
+## `feature` opens one rex window per worktree
+
+The window is labelled with the worktree name, with the working directory
+set to the worktree, because `teardown` finds the window by that label. Its
+first block is the feature lead. `rex window new` takes no label for its
+block, so `feature` renames the lead block `lead-<worktree>` with `rex block
+rename`, and prints the block's full ID, which is how the chief of staff
+addresses the lead. A lazygit block splits to the right of the lead and a
+shell block below the lazygit block, both with `--focus=false`; the shell is
+where `devenv up` runs when a ticket needs the app.
+
+The lazygit block runs `direnv exec <path> lazygit`, never `lg`: `lg` is a
+zsh alias set in the interactive configuration, and a block's command runs
+without that configuration. The lead block has no `--keep-open`, so it
+closes when Claude exits. `FeatureGuardTest`, "a worktree opens as one rex
+window", pins every argument of the five `rex` calls.
+
+`feature` refuses, before any window opens, when `wt` left no worktree on
+the new branch or left a path that is not a directory: rex starts a window
+whose `-c` directory is missing or empty in `$HOME`, which would start the
+lead outside the worktree and its guards. It also refuses when a `rex`
+reply holds no block ID (`block:...`) for the lead or the lazygit block,
+rather than pass an empty ID on as the next call's anchor, and it stops
+there under `set -e` with the layout partly built.
 
 ## `feature` doesn't start the app, and there is no devenv MCP
 
@@ -908,32 +1008,70 @@ Several worktrees run side by side, and each `devenv up` (Vite, php-fpm,
 the queue, the scheduler and pail) costs real memory on Joey's laptop. Four
 parallel stacks made it unusable, while most tickets are backend work that
 only needs MySQL, which runs outside `devenv up`. So `feature` leaves the
-third pane as a shell, and only work that needs the browser starts the app
+third block as a shell, and only work that needs the browser starts the app
 there, then stops it. For the same reason the MCP servers include no
 `devenv mcp`: every agent session starts its own copy of each server, and
 nothing used that one.
 
-## `feature` hands the brief to Claude as input, not as an argument
+## `feature` hands the brief to Claude as one argument word
 
-`herdr agent start` refuses agent arguments it cannot quote safely for the
-pane's shell (`invalid_agent_argument`), so a brief holding quotes, `$` or
-backticks failed the launch. The script starts Claude with no prompt and
-then sends the brief with `herdr agent prompt`, which types it into Claude
-rather than through a shell. Claude reads a message starting with `!` as a
-shell command and one starting with `/` as a slash command, and `herdr
-agent prompt` reads a leading `-` as an option and takes no `--`, so
-`feature` refuses a brief that starts with any of the three, after leading
-whitespace. It also refuses, before anything is created, a worktree name
-outside `^[a-z0-9][a-z0-9._-]*$` and one ending in `test` or `test-<N>`,
-which `database-names.nix` would refuse only after `wt switch --create` had
-made the worktree and branch.
+Under herdr the launch failed on a brief holding quotes, `$` or backticks,
+because herdr could not quote an agent argument safely for the pane's
+shell, so the script started Claude bare and typed the brief in afterwards.
+Rex passes a command as separate argument words, so the brief is simply the
+last word of the lead block's command:
+
+```
+rex window new -s <session> <worktree> -c <path> --json -- \
+  direnv exec <path> claude --remote-control --agent feature-lead -n <worktree> <brief>
+```
+
+Rex runs the command through the login shell's environment, and that login
+`PATH` is what finds `direnv` and `claude`, so the call leaves `--shell` at
+its default. The rex guide says to pass a command and its arguments "as
+separate words", which is how the brief stays one word through that shell.
+A live check on 2026-11-15, in one throwaway window, saw the lead command's
+argument list arrive through the default login shell byte for byte, with the
+brief (quotes, `$HOME`, a backtick, `;`, `$(id)`, `\`, `*`, `|` and `&&`) as
+one word, the worktree as the working directory, and `claude`, `direnv` and
+`lazygit` found on the login `PATH`. It did not start a real Claude, so
+Claude reading the brief as its prompt with `--remote-control` first is not
+proven live. The tests pin what `feature` hands to `rex`, not what rex does
+with it. "A brief reaches the claude argument list byte for byte" feeds
+briefs holding `"`, `'`, `$`, `${HOME}`, `$(id)`, a backtick, `;`, `|`, `&&`,
+`*` and `\` and asserts each is `rex`'s last word, unchanged.
+
+`--remote-control` takes an optional value, so written straight before the
+brief it would swallow the brief as the Remote Control session name and the
+lead would start with no prompt. It comes first, ahead of another option,
+and the same test asserts the word before the brief is the worktree name.
+
+Claude reads a prompt starting with `!` as a shell command and one starting
+with `/` as a slash command, and now that the brief is an argument word
+Claude's own option parser reads a leading `-` as an option, so `feature`
+refuses a brief that starts with any of the three, after leading
+whitespace. The `-` refusal is a security check: a brief of
+`--dangerously-skip-permissions`, `--permission-mode=bypassPermissions`,
+`--settings={"disableAllHooks":true}` or `--add-dir=/` would otherwise start
+the lead with the guards off, and each has a test row. A `--` before the
+brief would end option parsing, but `claude --help` doesn't document it, so
+`feature` doesn't use it and keeps the refusal. It also refuses, before
+anything is created, a worktree name outside `^[a-z0-9][a-z0-9._-]*$` and
+one ending in `test` or `test-<N>`, which `database-names.nix` would refuse
+only after `wt switch --create` had made the worktree and branch.
+
+A control character in a brief is still refused, although an argument word
+can carry one. An escape or OSC sequence in a brief reaches Joey's terminal
+when Claude renders the prompt, and terminal sequences are input a brief
+never needs. A newline or carriage return is refused only because the rule
+is one line of plain text; nothing breaks if one gets through.
 
 ## `feature`'s control-character check on the brief needs `grep -z`
 
 `grep`'s `[[:cntrl:]]` class never sees a bare newline inside its input,
 because grep treats a newline as the boundary between two lines to search,
 never as a character one of those lines could contain. A brief holding an
-embedded newline passed the plain check and reached `herdr agent prompt`
+embedded newline passed the plain check and reached the launch
 unrefused; `grep -z` instead treats the whole input as one NUL-terminated
 record, so an embedded `\n` shows up as ordinary content within it. `\r`
 and `\x1b` were caught either way, since neither one is grep's line
@@ -1321,7 +1459,7 @@ state check that refuses when a protected file differs from `main`, at the
 builder's `TaskCompleted` and in `ci`, is what closes this class; a
 name-based hook, however wide its trigger, cannot. Separately: an inline
 suppression (`@phpstan-ignore`, `eslint-disable`, Pest's `->skip()`) or a
-nested agent (`claude --bare -p`, `herdr pane run`) bypasses the hook
+nested agent (`claude --bare -p`, `rex run`) bypasses the hook
 entirely. `.npmrc` and `pnpm-workspace.yaml` are not on the list, since
 dependency work edits them; a `script-shell` or `scriptShell` setting in
 either can still make the locked `pnpm` scripts exit 0, and HRVST-222 locks

@@ -1,0 +1,14 @@
+{
+  "session_id": "session:harvst",
+  "block": {
+    "block_id": "block:self-main",
+    "label": "shell",
+    "creator_name": "com.example.terminal",
+    "flavor": "com.example.terminal.shell",
+    "host_id": "host-1",
+    "placement": "placed",
+    "window_id": "window:w-main",
+    "owner": "client:c1"
+  },
+  "api": {"events": {}, "methods": {}}
+}

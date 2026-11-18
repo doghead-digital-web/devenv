@@ -1,0 +1,56 @@
+{
+  "active_window_id": "window:w-main",
+  "label": "harvst",
+  "revision": 16,
+  "session_id": "session:harvst",
+  "windows": [
+    {
+      "focused_block_id": "block:b12a",
+      "label": "hrvst-12-ahead",
+      "window_id": "window:w12a",
+      "layers": [
+        {
+          "bounds": [0, 0, 1, 1],
+          "kind": "tiled",
+          "layer_id": "layer:12a1",
+          "layout": {"rect": [0, 0, 1, 1], "block_id": "block:b12a"},
+          "blocks": [
+            {"block_id": "block:b12a", "label": "shell", "creator_name": "com.example.terminal", "flavor": "com.example.terminal.shell", "host_id": "host-1", "owner": "client:c1"}
+          ]
+        }
+      ]
+    },
+    {
+      "focused_block_id": "block:b11n",
+      "label": "hrvst-11-merge-commit",
+      "window_id": "window:w11n",
+      "layers": [
+        {
+          "bounds": [0, 0, 1, 1],
+          "kind": "tiled",
+          "layer_id": "layer:11n1",
+          "layout": {"rect": [0, 0, 1, 1], "block_id": "block:b11n"},
+          "blocks": [
+            {"block_id": "block:b11n", "label": "shell", "creator_name": "com.example.terminal", "flavor": "com.example.terminal.shell", "host_id": "host-1", "owner": "client:c1"}
+          ]
+        }
+      ]
+    },
+    {
+      "focused_block_id": "block:b9e",
+      "label": "hrvst-9-reverted",
+      "window_id": "window:w9e",
+      "layers": [
+        {
+          "bounds": [0, 0, 1, 1],
+          "kind": "tiled",
+          "layer_id": "layer:9e1",
+          "layout": {"rect": [0, 0, 1, 1], "block_id": "block:b9e"},
+          "blocks": [
+            {"block_id": "block:b9e", "label": "shell", "creator_name": "com.example.terminal", "flavor": "com.example.terminal.shell", "host_id": "host-1", "owner": "client:c1"}
+          ]
+        }
+      ]
+    }
+  ]
+}

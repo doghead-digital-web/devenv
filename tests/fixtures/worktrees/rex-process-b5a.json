@@ -1,0 +1,1 @@
+{"last_exit":null,"child":{"pid":1000,"user_id":0,"name":"login"},"foreground":{"pid":1003,"user_id":501,"name":"claude","cwd":"@ROOT@/hrvst-1-merged"},"ancestors":[{"pid":1002,"user_id":501,"name":"zsh","cwd":"@ROOT@/hrvst-1-merged"},{"pid":1000,"user_id":0,"name":"login"}]}

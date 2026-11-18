@@ -195,30 +195,94 @@
 
   dirty=$(git -C "$path" -c core.fsmonitor=false status --porcelain) || refuse "git status failed in $target"
 
+  rex_call() {
+    rex --autostart=false "$@" </dev/null
+  }
+
+  check_window() {
+    local listing=$1 window=$2 identity host endpoint blocks block block_host process verdict
+    check_problem=
+    check_blocks=
+    identity=$(rex_call whoami --json 2>/dev/null) || identity=
+    host=$(printf '%s' "$identity" | ${jq} -r '.host_id // empty' 2>/dev/null || true)
+    if [ -z "$host" ]; then check_problem="rex does not report this host's ID"; return; fi
+    endpoint=$(printf '%s' "$identity" | ${jq} -r '.endpoint // empty' 2>/dev/null || true)
+    case "$endpoint" in
+      unix://*) ;;
+      *) check_problem="rex is connected to a server that is not on this machine"; return ;;
+    esac
+    blocks=$(printf '%s' "$listing" | ${jq} -r --arg window "$window" '
+      .windows[] | select(.window_id == $window) | .layers[]?.blocks[]? | "\(.block_id // "")\u001f\(.host_id // "")"
+    ' 2>/dev/null) || { check_problem="rex listed the window in a shape teardown can't read"; return; }
+    if [ -z "$blocks" ]; then check_problem="rex lists no blocks in $window"; return; fi
+    while IFS=$'\x1f' read -r block block_host; do
+      if [ -z "$block" ]; then check_problem="rex lists a block with no ID in $window"; return; fi
+      if [ "$block_host" != "$host" ]; then check_problem="block $block is not on this host"; return; fi
+      process=$(rex_call block call -s "$session" -b "$block" process 2>/dev/null) || { check_problem="rex could not read block $block"; return; }
+      verdict=$(printf '%s' "$process" | ${jq} -r --arg path "$path" '
+        [.foreground.cwd, .child.cwd, .ancestors[]?.cwd] | map(select(. != null and . != "")) as $cwds
+        | if ($cwds | length) == 0 then "none"
+          else ($cwds | map(select(. != $path and (startswith($path + "/") | not))) | first) as $outside
+            | if $outside == null then "inside" else "outside " + ($outside | gsub("[\u0000-\u001f\u007f-\u009f]"; "?")) end
+          end
+      ' 2>/dev/null) || { check_problem="rex could not read block $block"; return; }
+      case "$verdict" in
+        inside) ;;
+        none) check_problem="block $block reports no working directory"; return ;;
+        "outside "*) check_problem="block $block is outside the worktree (''${verdict#outside })"; return ;;
+        *) check_problem="rex could not read block $block"; return ;;
+      esac
+      check_blocks+="$block"$'\n'
+    done <<<"$blocks"
+    check_blocks=$(printf '%s' "$check_blocks" | LC_ALL=C sort)
+  }
+
   tab=
   tab_note=
-  workspace=$(herdr workspace list 2>/dev/null | ${jq} -r '.result.workspaces[] | select(.label == "${appName}") | .workspace_id' 2>/dev/null || true)
-  if [ -z "$workspace" ]; then
-    tab_note="none (no herdr workspace labelled ${appName}, or herdr is not answering)"
+  planned_blocks=
+  session=
+  sessions=
+  case "''${REX_SERVER:-}" in
+    "" | unix://*) sessions=$(rex_call ls --json 2>/dev/null || true) ;;
+  esac
+  session_count=$(printf '%s' "$sessions" | ${jq} -r '[.sessions[] | select(.label == "${appName}")] | length' 2>/dev/null || true)
+  if ! [[ "''${REX_SERVER:-unix://}" == unix://* ]]; then
+    tab_note="skipped: rex is connected to a server that is not on this machine"
+  elif [ "''${session_count:-0}" -eq 0 ]; then
+    tab_note="none (no rex session labelled ${appName}, or rex is not answering)"
+  elif [ "$session_count" -gt 1 ]; then
+    tab_note="skipped: more than one rex session is labelled ${appName}"
+  elif ! session=$(printf '%s' "$sessions" | ${jq} -r '.sessions[] | select(.label == "${appName}") | .session_id // empty') || [ -z "$session" ]; then
+    tab_note="skipped: rex listed the session without an ID"
   else
-    tabs=$(herdr tab list --workspace "$workspace" | ${jq} -r --arg label "$target" '.result.tabs[] | select(.label == $label) | .tab_id') ||
-      refuse "herdr tab list failed"
-    if [ -z "$tabs" ]; then
+    listing=$(rex_call window ls -s "$session" --json) || refuse "rex window ls failed"
+    window_count=$(printf '%s' "$listing" | ${jq} -r --arg label "$target" '[.windows[] | select(.label == $label)] | length') ||
+      refuse "rex window ls printed something that is not a window list"
+    if [ "$window_count" -eq 0 ]; then
       tab_note="none"
-    elif [ "$(printf '%s\n' "$tabs" | wc -l)" -gt 1 ]; then
-      tab_note="skipped: more than one tab in ${appName} is labelled $target"
-    elif [ "$tabs" = "''${HERDR_TAB_ID:-}" ]; then
-      tab_note="skipped: $tabs is the tab teardown runs in"
+    elif [ "$window_count" -gt 1 ]; then
+      tab_note="skipped: more than one window in ${appName} is labelled $target"
     else
-      outside=$(herdr pane list --workspace "$workspace" | ${jq} -r --arg tab "$tabs" --arg path "$path" '
-        [
-          .result.panes[] | select(.tab_id == $tab) | . as $pane
-          | (.cwd // ""), (.foreground_cwd // "")
-          | select(. != $path and (startswith($path + "/") | not))
-          | "\($pane.pane_id) is outside the worktree (\(.))"
-        ] | first // empty
-      ') || refuse "herdr pane list failed"
-      if [ -n "$outside" ]; then tab_note="skipped: pane $outside"; else tab=$tabs; fi
+      window=$(printf '%s' "$listing" | ${jq} -r --arg label "$target" '.windows[] | select(.label == $label) | .window_id // empty')
+      own_window=
+      if [ -n "''${REX_BLOCK:-}" ]; then
+        own_window=$(rex_call block inspect "$REX_BLOCK" --json 2>/dev/null | ${jq} -r '.block.window_id // empty' 2>/dev/null || true)
+      fi
+      if [ -z "$window" ]; then
+        tab_note="skipped: rex listed the window without an ID"
+      elif [ -n "''${REX_BLOCK:-}" ] && [ -z "$own_window" ]; then
+        tab_note="skipped: REX_BLOCK is set but rex can't inspect it, so teardown can't rule out its own window"
+      elif [ "$window" = "$own_window" ]; then
+        tab_note="skipped: $window is the window teardown runs in"
+      else
+        check_window "$listing" "$window"
+        if [ -n "$check_problem" ]; then
+          tab_note="skipped: $check_problem"
+        else
+          tab=$window
+          planned_blocks=$check_blocks
+        fi
+      fi
     fi
   fi
 
@@ -235,7 +299,7 @@
   wt_remove+=("$path")
 
   echo "Plan for $target:"
-  if [ -n "$tab" ]; then echo "  close tab        $tab"; else echo "  herdr tab        $tab_note"; fi
+  if [ -n "$tab" ]; then echo "  close tab        $tab"; else echo "  rex tab          $tab_note"; fi
   for pid in $(processes_under "$path"); do
     read -r tty command <<<"$(ps -o tty= -o comm= -p "$pid" 2>/dev/null || true)"
     [ -n "$command" ] || continue
@@ -293,7 +357,11 @@
   }
 
   if [ -n "$tab" ]; then
-    herdr tab close "$tab" >/dev/null || stop "herdr could not close tab $tab"
+    listing=$(rex_call window ls -s "$session" --json) || stop "rex could not list the windows again, so $tab is still open"
+    check_window "$listing" "$tab"
+    [ -z "$check_problem" ] || stop "$tab changed since the plan: $check_problem"
+    [ "$check_blocks" = "$planned_blocks" ] || stop "$tab changed since the plan: its blocks are not the ones planned"
+    rex_call window close -s "$session" "$tab" >/dev/null || stop "rex could not close $tab"
   fi
 
   for i in "''${!branches[@]}"; do

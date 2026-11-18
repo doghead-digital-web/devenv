@@ -96,7 +96,7 @@ function killWordForms(): array
         'through setsid' => 'setsid %w x',
         'through flock' => 'flock /tmp/lock %w x',
         'through nix develop' => 'nix develop -c %w x',
-        'typed into another pane' => "herdr pane send-text p1 '%w x'",
+        'typed into another pane' => "rex send -b p1 '%w x'",
         'run under a pty' => "python3 -c 'import pty; pty.spawn([\"%w\", \"x\"])'",
         'an echo piped to a shell' => 'echo %w x | sh',
         'a fd exec' => 'fd -x %w',
