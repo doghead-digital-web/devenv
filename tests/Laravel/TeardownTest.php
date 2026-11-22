@@ -51,7 +51,7 @@ function fixtureCommit(string $path, string $file, string $message): void
 function writeTeardown(string $bin, string $lockAtBuild): void
 {
     $result = Process::path(module_path())->run([
-        'nix-instantiate', '--eval', '--strict', '--json', 'laravel/scripts/teardown.nix',
+        'nix-instantiate', '--eval', '--read-write-mode', '--strict', '--json', 'laravel/scripts/teardown.nix',
         '--argstr', 'jq', 'jq',
         '--argstr', 'grep', 'grep',
         '--argstr', 'gawk', 'gawk',
