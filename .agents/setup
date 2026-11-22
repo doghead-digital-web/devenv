@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb to run this module's test suite (composer test) the way
+# a Mac does: Nix, devenv, the devenv shell from devenv.lock, Composer
+# dependencies, and a <nixpkgs> on NIX_PATH for the tests that evaluate
+# laravel/*.nix with nix-instantiate.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+state_dir="$HOME/.local/state/doghead-devenv"
+nixpkgs_link="$state_dir/nixpkgs"
+nix_profile="$HOME/.nix-profile"
+nix_flags=(--extra-experimental-features 'nix-command flakes')
+
+step() {
+  printf '\n==> %s\n' "$*"
+  step_started=$SECONDS
+}
+
+done_step() {
+  printf '    done in %ss\n' "$((SECONDS - step_started))"
+}
+
+mkdir -p "$state_dir"
+
+step "Nix"
+if [ ! -x "$nix_profile/bin/nix" ]; then
+  curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon --yes
+fi
+# The installer cannot update this running script's environment.
+# shellcheck disable=SC1091
+[ -f "$nix_profile/etc/profile.d/nix.sh" ] && . "$nix_profile/etc/profile.d/nix.sh"
+export PATH="$nix_profile/bin:$PATH"
+nix --version
+done_step
+
+step "devenv, from the nixpkgs devenv.lock pins"
+nixpkgs_rev=$(jq -r '.nodes.nixpkgs.locked.rev' devenv.lock)
+if ! command -v devenv >/dev/null 2>&1; then
+  nix "${nix_flags[@]}" profile add "github:cachix/devenv-nixpkgs/$nixpkgs_rev#devenv"
+fi
+devenv version
+done_step
+
+step "<nixpkgs> for the tests' nix-instantiate calls"
+# devenv-nixpkgs is a patching shim with no lib/ of its own, so NIX_PATH
+# points at the upstream nixpkgs it pins (nixpkgs-src in devenv.lock).
+nixpkgs_src_rev=$(jq -r '.nodes["nixpkgs-src"].locked.rev' devenv.lock)
+nixpkgs_src=$(nix "${nix_flags[@]}" flake prefetch --json "github:NixOS/nixpkgs/$nixpkgs_src_rev" | jq -r .storePath)
+# A GC root keeps it in the store; the link keeps NIX_PATH stable across lock bumps.
+nix-store --add-root "$nixpkgs_link" --realise "$nixpkgs_src" >/dev/null
+echo "nixpkgs -> $nixpkgs_src"
+done_step
+
+step "devenv shell and Composer dependencies"
+devenv shell -- composer install --no-interaction --no-progress
+done_step
+
+step "Login shells in the repository enter the devenv environment"
+profile_marker="# doghead-devenv development shell"
+# The guard compares PATH with what the hook produced, not DEVENV_ROOT: a nested
+# login shell keeps DEVENV_ROOT but Debian's /etc/profile resets its PATH.
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >>"$HOME/.bash_profile" <<EOF
+
+$profile_marker
+if [[ "\${PATH}" != "\${DOGHEAD_DEVENV_PATH:-}" && "\${PWD}" == "$repo_root" ]]; then
+  export NIX_PATH="nixpkgs=$nixpkgs_link"
+  eval "\$("$nix_profile/bin/devenv" print-dev-env 2>/dev/null)"
+  export DOGHEAD_DEVENV_PATH="\$PATH"
+fi
+EOF
+fi
+done_step
