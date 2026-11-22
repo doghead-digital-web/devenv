@@ -16,3 +16,7 @@ devenv.local.yaml
 /tests/fixtures/app/.claude
 /tests/fixtures/app/.mcp.json
 /tests/fixtures/app/.pre-commit-config.yaml
+
+# Amp orbs
+.amp/portals/*
+.amp/in/

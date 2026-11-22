@@ -41,7 +41,7 @@ function writeFeatureStub(string $bin, string $name, string $body): void
 function writeFeature(string $bin): void
 {
     $result = Process::path(module_path())->run([
-        'nix-instantiate', '--eval', '--strict', '--json', 'laravel/scripts/feature.nix',
+        'nix-instantiate', '--eval', '--read-write-mode', '--strict', '--json', 'laravel/scripts/feature.nix',
         '--argstr', 'jq', 'jq',
         '--argstr', 'grep', 'grep',
         '--argstr', 'gawk', 'gawk',
